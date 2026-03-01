@@ -7,14 +7,20 @@ import tempfile
 import zipfile
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
 import fitz
-import google.generativeai as genai
 import pdfplumber
-from fastapi import FastAPI, File, HTTPException, UploadFile
+import google.generativeai as genai
+
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+
+# =========================================================
+# FASTAPI SETUP
+# =========================================================
 
 app = FastAPI(title="AI LaTeX Lab Generator")
 
@@ -26,339 +32,448 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-LATEX_TEMPLATE = r"""\\pagestyle{fancy}
-\\fancyhf{}
-\\fancyhead[L]{Operating System Programs}
-\\fancyhead[R]{Page \\thepage}
-
-\\lstset{
-    language={[x86masm]Assembler},
-    basicstyle=\\ttfamily\\small,
-    frame=single,
-    numbers=left,
-    numberstyle=\\tiny,
-    stepnumber=1,
-    numbersep=5pt,
-    showstringspaces=false,
-    breaklines=true,
-    tabsize=4,
-    keywordstyle=\\color{blue!60!black},
-    commentstyle=\\color{green!40!black}
-}
-
-\\tcbset{
-    myoutputbox/.style={
-        colback=black,
-        colframe=gray!75!black,
-        coltext=white,
-        boxrule=0.5pt,
-        arc=2pt,
-        fontupper=\\ttfamily\\small,
-        fonttitle=\\bfseries\\small,
-        coltitle=white
-    }
-}
-
-\\small
-\\begin{center}
-    \\Large \\underline{\\textbf{EXPERIMENT NO. __EXPERIMENT_NUMBER__}} \\\\
-    \\large \\underline{\\textbf{{__EXPERIMENT_HEADING__}}}
-\\end{center}
-
-\\vspace{0.5cm}
-\\noindent \\Large\\textbf{{DATE: __DATE__}}
-\\vspace{0.2cm}
-
-\\normalsize
-\\section*{\\underline{AIM}}
-__AIM__
-
-\\section*{\\underline{ALGORITHM}}
-__ALGORITHM_SECTIONS__
-
-\\section*{\\underline{PROGRAM}}
-__PROGRAM_SECTIONS__
-
-\\section*{\\underline{OUTPUT}}
-__OUTPUT_SECTIONS__
-
-\\large
-\\section*{\\underline{RESULT}}
-__RESULT__
-"""
-
+# =========================================================
+# DATA MODELS
+# =========================================================
 
 class ProgramData(BaseModel):
-    title: str
+    title: str = ""
     code: str
-    dependencies: list[str] = Field(default_factory=list)
     output: str = ""
 
 
 class AlgorithmData(BaseModel):
     name: str
-    steps: list[str]
+    steps: List[str]
 
 
 class ExperimentData(BaseModel):
     experiment_number: str
     date: str
     experiment_heading: str
-    title: str
     aim: str
-    algorithms: list[AlgorithmData]
-    programs: list[ProgramData]
+    algorithms: List[AlgorithmData]
+    programs: List[ProgramData]
     result: str
 
 
-def _extract_json(raw: str) -> dict[str, Any]:
+# =========================================================
+# STRICT LATEX TEMPLATE (FIXED FORMAT)
+# =========================================================
+
+LATEX_TEMPLATE = r"""
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Operating System Programs}
+\fancyhead[R]{Page \thepage}
+
+\lstset{
+language=C,
+basicstyle=\ttfamily\small,
+frame=single,
+numbers=left,
+numberstyle=\tiny,
+breaklines=true
+}
+
+\tcbset{
+myoutputbox/.style={
+colback=black,
+colframe=gray!75!black,
+coltext=white,
+fontupper=\ttfamily\small
+}
+}
+
+\small
+\begin{center}
+\Large \underline{\textbf{EXPERIMENT NO. __NO__}} \\
+\large \underline{\textbf{__HEADING__}}
+\end{center}
+
+\vspace{0.5cm}
+\noindent \Large\textbf{DATE: __DATE__}
+
+\normalsize
+\section*{\underline{AIM}}
+__AIM__
+
+\section*{\underline{ALGORITHM}}
+
+__ALGORITHMS__
+
+\section*{\underline{PROGRAM}}
+
+__PROGRAMS__
+
+\section*{\underline{OUTPUT}}
+
+__OUTPUTS__
+
+\large
+\section*{\underline{RESULT}}
+__RESULT__
+"""
+
+
+# =========================================================
+# GEMINI MODEL
+# =========================================================
+
+def gemini():
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        raise HTTPException(500, "Missing GEMINI_API_KEY")
+
+    genai.configure(api_key=key)
+    return genai.GenerativeModel("gemini-3-flash-preview")
+
+
+# =========================================================
+# JSON EXTRACTION
+# =========================================================
+
+def extract_json(text: str):
     try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        return json.loads(text)
+    except:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
         if not match:
-            raise
-        return json.loads(match.group(0))
+            raise HTTPException(422, "Invalid AI JSON")
+        return json.loads(match.group())
 
 
-def _extract_text_from_pdf(path: Path) -> str:
-    chunks: list[str] = []
+# =========================================================
+# FILE TEXT EXTRACTION
+# =========================================================
+
+def extract_pdf(path: Path):
+    text = []
+
     with pdfplumber.open(path) as pdf:
-        for page in pdf.pages:
-            chunks.append(page.extract_text() or "")
-    text = "\n".join(chunks).strip()
-    if text:
-        return text
+        for p in pdf.pages:
+            text.append(p.extract_text() or "")
+
+    result = "\n".join(text)
+    if result.strip():
+        return result
 
     doc = fitz.open(path)
-    fallback = []
-    for page in doc:
-        fallback.append(page.get_text())
-    return "\n".join(fallback)
+    return "\n".join(p.get_text() for p in doc)
 
 
-def _extract_text(file_path: Path, temp_dir: Path) -> str:
-    suffix = file_path.suffix.lower()
+def extract_text(path: Path, temp: Path):
+
+    suffix = path.suffix.lower()
+
+    # =============================
+    # HANDLE FILES WITHOUT EXTENSION
+    # =============================
+    if suffix == "" or suffix not in [
+        ".pdf", ".txt", ".zip", ".bin"
+    ]:
+        try:
+            # try reading as text
+            return path.read_text(errors="ignore")
+        except:
+            return path.read_bytes().decode(errors="ignore")
+    # =============================
+    # DIRECT FILE SUPPORT
+    # =============================
+
     if suffix == ".pdf":
-        return _extract_text_from_pdf(file_path)
+        return extract_pdf(path)
+
     if suffix == ".txt":
-        return file_path.read_text(encoding="utf-8", errors="ignore")
+        return path.read_text(errors="ignore")
+
+    if suffix == ".bin":
+        # safely decode binary content
+        return path.read_bytes().decode(errors="ignore")
+
+    # =============================
+    # ZIP SUPPORT
+    # =============================
+
     if suffix == ".zip":
-        unzip_dir = temp_dir / "unzipped"
-        unzip_dir.mkdir(exist_ok=True)
-        with zipfile.ZipFile(file_path, "r") as zf:
-            zf.extractall(unzip_dir)
 
-        all_text: list[str] = []
-        for p in unzip_dir.rglob("*"):
-            if p.is_dir():
+        unzip = temp / "unzipped"
+        unzip.mkdir(exist_ok=True)
+
+        zipfile.ZipFile(path).extractall(unzip)
+
+        data = []
+
+        for f in unzip.rglob("*"):
+
+            if f.is_dir():
                 continue
-            ext = p.suffix.lower()
-            if ext in {".c", ".h", ".txt", ".md"}:
-                all_text.append(f"\n--- FILE: {p.name} ---\n")
-                all_text.append(p.read_text(encoding="utf-8", errors="ignore"))
+
+            ext = f.suffix.lower()
+
+            # -------- TEXT BASED --------
+            if ext in [".c", ".txt"]:
+                data.append(
+                    f"\n--- FILE: {f.name} ---\n"
+                )
+                data.append(
+                    f.read_text(errors="ignore")
+                )
+
+            # -------- PDF INSIDE ZIP --------
             elif ext == ".pdf":
-                all_text.append(f"\n--- FILE: {p.name} ---\n")
-                all_text.append(_extract_text_from_pdf(p))
-        return "\n".join(all_text)
+                data.append(
+                    f"\n--- FILE: {f.name} ---\n"
+                )
+                data.append(
+                    extract_pdf(f)
+                )
 
-    raise HTTPException(status_code=400, detail="Unsupported file type")
+            # -------- BIN INSIDE ZIP --------
+            elif ext == ".bin":
+                data.append(
+                    f"\n--- FILE: {f.name} ---\n"
+                )
+                data.append(
+                    f.read_bytes().decode(errors="ignore")
+                )
+
+        return "\n".join(data)
+
+    raise HTTPException(400, "Unsupported file")
 
 
-def _gemini_model() -> Any:
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not set")
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel("gemini-1.5-pro")
+# =========================================================
+# PROGRAM EXTRACTION
+# =========================================================
 
+def extract_programs(raw_text):
 
-def _extract_programs_with_gemini(raw_text: str) -> list[ProgramData]:
     prompt = f"""
-Extract all valid C programs from the text below.
-Rules:
-- Ignore theory, explanations, and non-code prose.
-- Detect multiple independent programs.
-- Fix OCR spacing issues only when compilation would break.
-- Detect additional header/source dependencies if present.
-- Return strict JSON only in the shape:
+Extract ALL C programs.
+
+Return STRICT JSON:
+
 {{
-  "programs": [
-    {{"title": "", "code": "", "dependencies": []}}
-  ]
+"programs":[
+{{"title":"","code":""}}
+]
 }}
 
-Text:
+TEXT:
 {raw_text}
 """
-    model = _gemini_model()
-    response = model.generate_content(prompt)
-    data = _extract_json(response.text)
-    programs = [ProgramData(**p) for p in data.get("programs", []) if p.get("code")]
-    if not programs:
-        raise HTTPException(status_code=422, detail="No valid C programs detected")
-    return programs
+
+    res = gemini().generate_content(prompt)
+    data = extract_json(res.text)
+
+    return [ProgramData(**p) for p in data["programs"]]
 
 
-def _academic_content_with_gemini(program: ProgramData, output: str) -> tuple[str, str, list[AlgorithmData]]:
+# =========================================================
+# ACADEMIC CONTENT
+# =========================================================
+
+def generate_academic(program, output):
+
     prompt = f"""
-Generate academic lab-record content for this C program and output.
-Return strict JSON only:
+Generate AIM and ALGORITHMS.
+
+Return JSON:
+
 {{
-  "title": "",
-  "aim": "",
-  "algorithms": [
-    {{"name": "", "steps": []}}
-  ]
+"aim":"",
+"algorithms":[
+{{"name":"","steps":[]}}
+]
 }}
-Rules:
-- Academic tone.
-- Steps must be numbered logically (we will render numbers).
-- No hallucinated features.
 
 Program:
 {program.code}
-
-Execution Output:
-{output}
 """
-    model = _gemini_model()
-    response = model.generate_content(prompt)
-    data = _extract_json(response.text)
-    title = data.get("title", program.title or "C Program Experiment")
-    aim = data.get("aim", "")
-    algorithms = [AlgorithmData(**algo) for algo in data.get("algorithms", [])]
-    return title, aim, algorithms
+
+    res = gemini().generate_content(prompt)
+    data = extract_json(res.text)
+
+    algos = [AlgorithmData(**a) for a in data["algorithms"]]
+
+    return data["aim"], algos
 
 
-def _run_program(program: ProgramData, index: int, temp_dir: Path) -> str:
-    source_path = temp_dir / f"program_{index}.c"
-    binary_path = temp_dir / f"program_{index}"
-    source_path.write_text(program.code, encoding="utf-8")
+# =========================================================
+# RUN C PROGRAM
+# =========================================================
 
-    compile_proc = subprocess.run(
-        ["gcc", str(source_path), "-o", str(binary_path)],
+def run_program(program, i, temp):
+
+    src = temp / f"p{i}.c"
+    exe = temp / f"p{i}"
+
+    src.write_text(program.code)
+
+    compile = subprocess.run(
+        ["gcc", src, "-o", exe],
         capture_output=True,
         text=True,
     )
-    compile_out = (compile_proc.stdout or "") + (compile_proc.stderr or "")
-    if compile_proc.returncode != 0:
-        return f"Compilation Failed\n{compile_out}"
 
-    try:
-        run_proc = subprocess.run(
-            [str(binary_path)],
-            capture_output=True,
-            text=True,
-            timeout=3,
-        )
-        return (run_proc.stdout or "") + (run_proc.stderr or "")
-    except subprocess.TimeoutExpired:
-        return "Execution timed out after 3 seconds"
+    if compile.returncode != 0:
+        return compile.stderr
 
-
-def _escape_latex(value: str) -> str:
-    replacements = {
-        "\\": r"\\textbackslash{}",
-        "&": r"\\&",
-        "%": r"\\%",
-        "$": r"\\$",
-        "#": r"\\#",
-        "_": r"\\_",
-        "{": r"\\{",
-        "}": r"\\}",
-    }
-    escaped = value
-    for src, target in replacements.items():
-        escaped = escaped.replace(src, target)
-    return escaped
-
-
-def _build_latex(exp: ExperimentData) -> str:
-    algo_sections = []
-    for algo in exp.algorithms:
-        steps = "\n".join(f"    \\item {_escape_latex(step)}" for step in algo.steps)
-        algo_sections.append(
-            f"\\subsection*{{{_escape_latex(algo.name)}}}\n"
-            "\\begin{enumerate}[label=\\arabic*.]\n"
-            f"{steps}\n"
-            "\\end{enumerate}"
-        )
-
-    program_sections = []
-    output_sections = []
-    for i, program in enumerate(exp.programs, start=1):
-        listing_title = _escape_latex(program.title or f"Program {i}")
-        program_sections.append(
-            f"\\subsection*{{Listing {i}: {listing_title}}}\n"
-            "\\begin{lstlisting}[language=C]\n"
-            f"{program.code}\n"
-            "\\end{lstlisting}"
-        )
-        output_sections.append(
-            "\\begin{tcolorbox}[myoutputbox, title=Terminal Output]\n"
-            "\\begin{verbatim}\n"
-            f"{program.output}\n"
-            "\\end{verbatim}\n"
-            "\\end{tcolorbox}"
-        )
-
-    return (
-        LATEX_TEMPLATE.replace("__EXPERIMENT_NUMBER__", _escape_latex(exp.experiment_number))
-        .replace("__EXPERIMENT_HEADING__", _escape_latex(exp.experiment_heading))
-        .replace("__DATE__", _escape_latex(exp.date))
-        .replace("__AIM__", _escape_latex(exp.aim))
-        .replace("__ALGORITHM_SECTIONS__", "\n".join(algo_sections))
-        .replace("__PROGRAM_SECTIONS__", "\n".join(program_sections))
-        .replace("__OUTPUT_SECTIONS__", "\n".join(output_sections))
-        .replace("__RESULT__", _escape_latex(exp.result))
+    run = subprocess.run(
+        [exe],
+        capture_output=True,
+        text=True,
+        timeout=3,
     )
 
+    return run.stdout
+
+
+# =========================================================
+# LATEX BUILDER (DETERMINISTIC)
+# =========================================================
+
+ORDER = ["FCFS", "SJF", "Round Robin", "Priority"]
+
+
+def build_algorithms(algorithms):
+
+    ordered = []
+
+    for name in ORDER:
+        for a in algorithms:
+            if name.lower() in a.name.lower():
+                ordered.append(a)
+
+    blocks = []
+
+    for algo in ordered:
+
+        steps = "\n".join(
+            f"    \\item {s}" for s in algo.steps
+        )
+
+        blocks.append(
+f"""\\subsection*{{{algo.name}}}
+\\begin{{enumerate}}[label=\\arabic*.]
+{steps}
+\\end{{enumerate}}"""
+        )
+
+    return "\n".join(blocks)
+
+
+def build_programs(programs):
+
+    sections = []
+
+    for i, p in enumerate(programs, 1):
+
+        sections.append(
+f"""\\subsection*{{Listing {i}: {p.title}}}
+\\begin{{lstlisting}}[language=C]
+{p.code}
+\\end{{lstlisting}}"""
+        )
+
+    return "\n".join(sections)
+
+
+def build_outputs(programs):
+
+    out = []
+
+    for p in programs:
+        out.append(
+f"""\\begin{{tcolorbox}}[myoutputbox,title=Terminal Output]
+\\begin{{verbatim}}
+{p.output}
+\\end{{verbatim}}
+\\end{{tcolorbox}}"""
+        )
+
+    return "\n".join(out)
+
+
+def build_latex(exp: ExperimentData):
+
+    latex = LATEX_TEMPLATE
+
+    latex = latex.replace("__NO__", exp.experiment_number)
+    latex = latex.replace("__HEADING__", exp.experiment_heading)
+    latex = latex.replace("__DATE__", exp.date)
+    latex = latex.replace("__AIM__", exp.aim)
+    latex = latex.replace("__RESULT__", exp.result)
+
+    latex = latex.replace(
+        "__ALGORITHMS__",
+        build_algorithms(exp.algorithms)
+    )
+
+    latex = latex.replace(
+        "__PROGRAMS__",
+        build_programs(exp.programs)
+    )
+
+    latex = latex.replace(
+        "__OUTPUTS__",
+        build_outputs(exp.programs)
+    )
+
+    return latex
+
+
+# =========================================================
+# API ENDPOINTS
+# =========================================================
 
 @app.post("/api/upload-process")
 async def upload_process(file: UploadFile = File(...)):
-    temp_dir = Path(tempfile.mkdtemp(prefix="labgen_"))
+
+    temp = Path(tempfile.mkdtemp())
+
     try:
-        input_path = temp_dir / file.filename
-        with open(input_path, "wb") as out:
-            out.write(await file.read())
+        path = temp / file.filename
+        path.write_bytes(await file.read())
 
-        raw_text = await asyncio.to_thread(_extract_text, input_path, temp_dir)
-        programs = await asyncio.to_thread(_extract_programs_with_gemini, raw_text)
+        raw = await asyncio.to_thread(
+            extract_text, path, temp
+        )
 
-        final_programs: list[ProgramData] = []
-        all_algorithms: list[AlgorithmData] = []
-        title = ""
+        programs = extract_programs(raw)
+
+        algorithms = []
         aim = ""
 
-        for idx, program in enumerate(programs, start=1):
-            output = await asyncio.to_thread(_run_program, program, idx, temp_dir)
-            prog_title, prog_aim, algorithms = await asyncio.to_thread(_academic_content_with_gemini, program, output)
-            if not title:
-                title = prog_title
+        for i, p in enumerate(programs, 1):
+
+            output = run_program(p, i, temp)
+            p.output = output
+
+            prog_aim, algos = generate_academic(p, output)
+
             if not aim:
                 aim = prog_aim
-            if algorithms:
-                all_algorithms.extend(algorithms)
-            program.output = output
-            if not program.title:
-                program.title = prog_title
-            final_programs.append(program)
+
+            algorithms.extend(algos)
 
         return {
             "experiment_number": "1",
             "date": "23/09/2025",
-            "experiment_heading": title or "Operating System Programs",
-            "title": title,
+            "experiment_heading": "CPU SCHEDULING ALGORITHMS",
             "aim": aim,
-            "algorithms": [a.model_dump() for a in all_algorithms],
-            "programs": [p.model_dump() for p in final_programs],
-            "result": "Program executed and output verified successfully.",
+            "algorithms": [a.model_dump() for a in algorithms],
+            "programs": [p.model_dump() for p in programs],
+            "result":
+            "CPU scheduling algorithms are implemented and outputs verified successfully."
         }
+
     finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        shutil.rmtree(temp, ignore_errors=True)
 
 
 @app.post("/api/generate-latex")
-async def generate_latex(payload: ExperimentData):
-    return {"latex": _build_latex(payload)}
+async def generate_latex(exp: ExperimentData):
+
+    return {"latex": build_latex(exp)}
