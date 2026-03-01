@@ -11,6 +11,12 @@ export GEMINI_API_KEY=your_key
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+Backend API:
+
+- `POST /api/upload-process` (existing upload flow)
+- `POST /api/process-text` (new pasted text flow using `###` headings)
+- `POST /api/generate-latex`
+
 ## Run frontend
 
 ```bash
