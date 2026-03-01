@@ -57,6 +57,10 @@ class ExperimentData(BaseModel):
     result: str
 
 
+class TextProcessRequest(BaseModel):
+    text: str = Field(min_length=1)
+
+
 # =========================================================
 # STRICT LATEX TEMPLATE (FIXED FORMAT)
 # =========================================================
@@ -270,6 +274,40 @@ TEXT:
     return [ProgramData(**p) for p in data["programs"]]
 
 
+def parse_programs_from_text(raw_text: str):
+
+    programs = []
+    current_title = ""
+    current_lines = []
+
+    for line in raw_text.splitlines():
+        if line.strip().startswith("###"):
+            code = "\n".join(current_lines).strip()
+            if code:
+                programs.append(
+                    ProgramData(title=current_title, code=code)
+                )
+            current_title = line.strip()[3:].strip() or "Untitled Program"
+            current_lines = []
+            continue
+
+        current_lines.append(line)
+
+    final_code = "\n".join(current_lines).strip()
+    if final_code:
+        programs.append(
+            ProgramData(
+                title=current_title or "Program 1",
+                code=final_code,
+            )
+        )
+
+    if not programs:
+        raise HTTPException(422, "No programs found in pasted text")
+
+    return programs
+
+
 # =========================================================
 # ACADEMIC CONTENT
 # =========================================================
@@ -298,6 +336,40 @@ Program:
     algos = [AlgorithmData(**a) for a in data["algorithms"]]
 
     return data["aim"], algos
+
+
+def generate_experiment_metadata(programs, aim, algorithms):
+
+    prompt = f"""
+Based on the generated lab content, create an experiment heading and final result sentence.
+
+Return JSON:
+
+{{
+"experiment_heading":"",
+"result":""
+}}
+
+AIM:
+{aim}
+
+ALGORITHMS:
+{json.dumps([a.model_dump() for a in algorithms])}
+
+PROGRAM TITLES:
+{json.dumps([p.title for p in programs])}
+"""
+
+    res = gemini().generate_content(prompt)
+    data = extract_json(res.text)
+
+    heading = (data.get("experiment_heading") or "CPU SCHEDULING ALGORITHMS").strip()
+    result = (
+        data.get("result")
+        or "CPU scheduling algorithms are implemented and outputs verified successfully."
+    ).strip()
+
+    return heading, result
 
 
 # =========================================================
@@ -442,33 +514,52 @@ async def upload_process(file: UploadFile = File(...)):
         )
 
         programs = extract_programs(raw)
+        return process_programs(programs, temp)
 
-        algorithms = []
-        aim = ""
+    finally:
+        shutil.rmtree(temp, ignore_errors=True)
 
-        for i, p in enumerate(programs, 1):
 
-            output = run_program(p, i, temp)
-            p.output = output
+def process_programs(programs: List[ProgramData], temp: Path):
 
-            prog_aim, algos = generate_academic(p, output)
+    algorithms = []
+    aim = ""
 
-            if not aim:
-                aim = prog_aim
+    for i, p in enumerate(programs, 1):
 
-            algorithms.extend(algos)
+        output = run_program(p, i, temp)
+        p.output = output
 
-        return {
-            "experiment_number": "1",
-            "date": "23/09/2025",
-            "experiment_heading": "CPU SCHEDULING ALGORITHMS",
-            "aim": aim,
-            "algorithms": [a.model_dump() for a in algorithms],
-            "programs": [p.model_dump() for p in programs],
-            "result":
-            "CPU scheduling algorithms are implemented and outputs verified successfully."
-        }
+        prog_aim, algos = generate_academic(p, output)
 
+        if not aim:
+            aim = prog_aim
+
+        algorithms.extend(algos)
+
+    heading, result = generate_experiment_metadata(
+        programs, aim, algorithms
+    )
+
+    return {
+        "experiment_number": "1",
+        "date": "23/09/2025",
+        "experiment_heading": heading,
+        "aim": aim,
+        "algorithms": [a.model_dump() for a in algorithms],
+        "programs": [p.model_dump() for p in programs],
+        "result": result
+    }
+
+
+@app.post("/api/process-text")
+async def process_text(payload: TextProcessRequest):
+
+    temp = Path(tempfile.mkdtemp())
+
+    try:
+        programs = parse_programs_from_text(payload.text)
+        return process_programs(programs, temp)
     finally:
         shutil.rmtree(temp, ignore_errors=True)
 

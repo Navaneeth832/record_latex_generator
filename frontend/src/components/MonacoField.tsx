@@ -10,6 +10,7 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   minHeight?: string;
+  readOnly?: boolean;
 };
 
 export default function MonacoField({
@@ -18,6 +19,7 @@ export default function MonacoField({
   value,
   onChange,
   minHeight = "200px",
+  readOnly = false,
 }: Props) {
   return (
     <div className="space-y-2">
@@ -28,7 +30,12 @@ export default function MonacoField({
         value={value}
         onChange={(v) => onChange(v ?? "")}
         theme="vs-dark"
-        options={{ minimap: { enabled: false }, wordWrap: "on" }}
+        options={{
+          minimap: { enabled: false },
+          wordWrap: "on",
+          readOnly,
+          scrollBeyondLastLine: false,
+        }}
       />
     </div>
   );
