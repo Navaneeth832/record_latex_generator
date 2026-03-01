@@ -549,6 +549,37 @@ def process_programs(programs: List[ProgramData], temp: Path):
         "algorithms": [a.model_dump() for a in algorithms],
         "programs": [p.model_dump() for p in programs],
         "result": result
+
+    finally:
+        shutil.rmtree(temp, ignore_errors=True)
+
+
+def process_programs(programs: List[ProgramData], temp: Path):
+
+    algorithms = []
+    aim = ""
+
+    for i, p in enumerate(programs, 1):
+
+        output = run_program(p, i, temp)
+        p.output = output
+
+        prog_aim, algos = generate_academic(p, output)
+
+        if not aim:
+            aim = prog_aim
+
+        algorithms.extend(algos)
+
+    return {
+        "experiment_number": "1",
+        "date": "23/09/2025",
+        "experiment_heading": "CPU SCHEDULING ALGORITHMS",
+        "aim": aim,
+        "algorithms": [a.model_dump() for a in algorithms],
+        "programs": [p.model_dump() for p in programs],
+        "result":
+        "CPU scheduling algorithms are implemented and outputs verified successfully."
     }
 
 

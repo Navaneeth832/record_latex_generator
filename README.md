@@ -16,6 +16,7 @@ Backend API:
 - `POST /api/upload-process` (existing upload flow)
 - `POST /api/process-text` (new pasted text flow using `###` headings)
 - `POST /api/generate-latex` (final conversion from reviewed `ExperimentData` → LaTeX)
+- `POST /api/generate-latex`
 
 ## Run frontend
 
