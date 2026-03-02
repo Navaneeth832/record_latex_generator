@@ -93,9 +93,17 @@ Open: `http://localhost:3000`
 
 ## User Manual
 
-### A) Generate Experiment LaTeX
+### Step 1) Download Full LaTeX Template ZIP
 
-1. Open the app home page and choose **Generate Experiment LaTeX**.
+1. From home page, open **Download LaTeX Template**.
+2. Fill the form (name, course code, department, institution, semester, roll number, etc.).
+3. Click **Download ZIP**.
+4. Extract the ZIP and review files (`main.tex`, `cover_page.tex`, `follow_page.tex`, `contents.tex`, etc.).
+5. Upload to Overleaf or use locally as a starting point for your lab record.
+
+### Step 2) Generate individual Experiment LaTeX
+
+1. After completing Step 1, return back to the app home page and choose **Generate Experiment LaTeX**.
 2. Select input mode:
    - **Upload File**: upload `.pdf`, `.txt`, `.zip`, or `.bin`
    - **Paste Code**: paste text in this format:
@@ -115,31 +123,26 @@ Open: `http://localhost:3000`
    - final result
 5. Click **Generate Final LaTeX**.
 6. Use **Copy** or **Download .tex**.
-
-### B) Download Full LaTeX Template ZIP
-
-1. From home page, open **Download LaTeX Template**.
-2. Fill the form (name, course code, department, institution, semester, roll number, etc.).
-3. Click **Download ZIP**.
-4. Extract the ZIP and review files (`main.tex`, `cover_page.tex`, `follow_page.tex`, `contents.tex`, etc.).
+7.Upload the generated `.tex` to Overleaf in the initial project template downloaded or your local LaTeX editor, and compile.
+8. Review the output PDF and make any necessary adjustments in the LaTeX source.
 
 ## Overleaf Helper Guide
 
-### Option 1: Using Generated `experiment.tex`
-
-1. Go to Overleaf and create a new project.
-2. Upload `experiment.tex`.
-3. If needed, add a minimal `main.tex` that includes your experiment content.
-4. Compile with `pdfLaTeX`.
-5. Fix any missing package issues by adding `\usepackage{...}` lines to your main file.
-
-### Option 2: Using Template ZIP
+### 1: Using Template ZIP
 
 1. In Overleaf, choose **New Project -> Upload Project**.
 2. Upload the generated ZIP directly.
 3. Open `main.tex` and confirm included files are present.
 4. Replace/add experiment files as needed.
 5. Compile and download final PDF.
+
+### 2: Using Generated `experiment.tex`
+
+1. Go to Overleaf and open the project template uploaded earlier.
+2. Upload `programname.tex`.
+3. Add a \include{programname} in main.tex that includes your experiment content.
+4. Compile with `pdfLaTeX`.
+5. Fix any missing package issues by adding `\usepackage{...}` lines to your main file.
 
 ## Troubleshooting
 
