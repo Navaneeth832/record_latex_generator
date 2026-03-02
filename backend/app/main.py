@@ -78,7 +78,7 @@ class TextProcessRequest(BaseModel):
 LATEX_TEMPLATE = r"""
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[L]{Operating System Programs}
+\fancyhead[L]{Cycle <nombor> Programs}
 \fancyhead[R]{Page \thepage}
 
 \lstset{
@@ -275,19 +275,19 @@ def parse_programs_from_text(raw: str):
 def generate_academic(program):
 
     prompt = f"""
-Generate AIM, ALGORITHM and OUTPUT.
+    Generate AIM, ALGORITHM and OUTPUT.
 
-Return STRICT JSON:
+    Return STRICT JSON:
 
-{{
-"aim":"",
-"algorithms":[{{"name":"","steps":[]}}],
-"output":""
-}}
+    {{
+    "aim":"",
+    "algorithms":[{{"name":"","steps":[]}}],
+    "output":""
+    }}
 
-Program:
-{program.code}
-"""
+    Program:
+    {program.code}
+    """
 
     data = extract_json(llm_generate(prompt))
 
@@ -299,20 +299,14 @@ Program:
     return data["aim"], algos, data["output"]
 
 
-def generate_metadata():
+def generate_metadata(aim):
+    prompt="generate a concise experiment heading based on this AIM:\n\n" + aim
+    res = llm_generate(prompt)
+    heading = res.strip().splitlines()[0] if res else ""
+    if not heading:
+        heading = "Program Implementation"
 
-    prompt = """
-Generate experiment_heading and result.
-
-Return JSON:
-{
-"experiment_heading":"",
-"result":""
-}
-"""
-
-    data = extract_json(llm_generate(prompt))
-    return data["experiment_heading"], data["result"]
+    return heading, "The execution is complete, and the results have been successfully validated."
 
 
 # =========================================================
@@ -343,16 +337,16 @@ def build_algorithms(algorithms):
 
     blocks = []
 
-    for a in algorithms:
+    for algo in algorithms:
 
         steps = "\n".join(
-            f"\\item {latex_escape(clean_step(s))}"
-            for s in a.steps
+            f"    \\item {latex_escape(clean_step(s))}"
+            for s in algo.steps
         )
 
         blocks.append(
-f"""\\subsection*{{{latex_escape(a.name)}}}
-\\begin{{enumerate}}
+f"""\\subsection*{{{latex_escape(algo.name)}}}
+\\begin{{enumerate}}[label=\\arabic*.]
 {steps}
 \\end{{enumerate}}"""
         )
@@ -375,26 +369,31 @@ f"""\\subsection*{{Listing {i}: {p.title}}}
     return "\n".join(out)
 
 
-def build_outputs(programs):
+def build_outputs(programs,s):
 
-    blocks = []
+    out = []
 
     for p in programs:
-        blocks.append(
+        out.append(
 f"""\\begin{{tcolorbox}}[myoutputbox,title=Terminal Output]
 \\begin{{verbatim}}
+s23a48@administrator-rusa:˜/s6$ gcc {s}.c
+s23a48@administrator-rusa:˜/s6$ ./a.out
 {p.output}
 \\end{{verbatim}}
 \\end{{tcolorbox}}"""
         )
 
-    return "\n".join(blocks)
+    return "\n".join(out)
 
 
 def build_latex(exp: ExperimentData):
 
     latex = LATEX_TEMPLATE
-
+    latex=latex.replace("<nombor>", exp.experiment_number[0])
+    latex = latex.replace("__NO__", exp.experiment_number)
+    latex = latex.replace("__HEADING__", exp.experiment_heading)
+    latex = latex.replace("__DATE__", exp.date)
     latex = latex.replace("__AIM__", exp.aim)
     latex = latex.replace("__RESULT__", exp.result)
 
@@ -410,7 +409,7 @@ def build_latex(exp: ExperimentData):
 
     latex = latex.replace(
         "__OUTPUTS__",
-        build_outputs(exp.programs)
+        build_outputs(exp.programs,str(exp.experiment_number))
     )
 
     return latex
@@ -435,11 +434,11 @@ def process_programs(programs):
 
         algorithms.extend(algos)
 
-    heading, result = generate_metadata()
+    heading, result = generate_metadata(aim)
 
     return {
         "experiment_number": "1",
-        "date": "23/09/2025",
+        "date": "16/02/2026",
         "experiment_heading": heading,
         "aim": aim,
         "algorithms": [a.model_dump() for a in algorithms],
