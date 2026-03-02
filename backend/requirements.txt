@@ -4,3 +4,5 @@ python-multipart==0.0.9
 pdfplumber==0.11.4
 pymupdf==1.24.11
 google-generativeai==0.8.3
+groq
+python-dotenv

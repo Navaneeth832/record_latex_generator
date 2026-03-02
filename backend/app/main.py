@@ -1,17 +1,23 @@
+# =========================================================
+# ENV LOAD
+# =========================================================
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 import asyncio
 import json
-import os
 import re
 import shutil
 import tempfile
 import zipfile
-import subprocess
 from pathlib import Path
-from typing import Any, List
+from typing import List
 
 import fitz
 import pdfplumber
 import google.generativeai as genai
+from groq import Groq
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,9 +25,14 @@ from pydantic import BaseModel, Field
 
 
 # =========================================================
-# FASTAPI SETUP
+# CONFIG
 # =========================================================
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq")
 
+
+# =========================================================
+# FASTAPI
+# =========================================================
 app = FastAPI(title="AI LaTeX Lab Generator")
 
 app.add_middleware(
@@ -32,10 +43,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # =========================================================
 # DATA MODELS
 # =========================================================
-
 class ProgramData(BaseModel):
     title: str = ""
     code: str
@@ -62,9 +73,8 @@ class TextProcessRequest(BaseModel):
 
 
 # =========================================================
-# STRICT LATEX TEMPLATE (FIXED FORMAT)
+# LATEX TEMPLATE (UNCHANGED FORMAT)
 # =========================================================
-
 LATEX_TEMPLATE = r"""
 \pagestyle{fancy}
 \fancyhf{}
@@ -121,46 +131,65 @@ __RESULT__
 
 
 # =========================================================
-# GEMINI MODEL
+# LLM ABSTRACTION
 # =========================================================
+def llm_generate(prompt: str) -> str:
 
-def gemini():
-    key = os.getenv("GEMINI_API_KEY")
-    if not key:
-        raise HTTPException(500, "Missing GEMINI_API_KEY")
+    if LLM_PROVIDER == "gemini":
 
-    genai.configure(api_key=key)
-    return genai.GenerativeModel("gemini-3-flash-preview")
+        key = os.getenv("GEMINI_API_KEY")
+        if not key:
+            raise HTTPException(500, "Missing GEMINI_API_KEY")
+
+        genai.configure(api_key=key)
+        model = genai.GenerativeModel("gemini-3-flash-preview")
+
+        res = model.generate_content(prompt)
+        return res.text.strip()
+
+    elif LLM_PROVIDER == "groq":
+
+        key = os.getenv("GROQ_API_KEY")
+        if not key:
+            raise HTTPException(500, "Missing GROQ_API_KEY")
+
+        client = Groq(api_key=key)
+
+        res = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+        )
+
+        return res.choices[0].message.content.strip()
+
+    raise HTTPException(500, "Invalid provider")
 
 
 # =========================================================
-# JSON EXTRACTION
+# JSON SAFE EXTRACTION
 # =========================================================
-
 def extract_json(text: str):
-    try:
-        return json.loads(text)
-    except:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if not match:
-            raise HTTPException(422, "Invalid AI JSON")
-        return json.loads(match.group())
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        raise HTTPException(422, "Invalid AI JSON")
+    return json.loads(match.group())
 
 
 # =========================================================
-# FILE TEXT EXTRACTION
+# FILE EXTRACTION
 # =========================================================
-
 def extract_pdf(path: Path):
-    text = []
 
+    text = []
     with pdfplumber.open(path) as pdf:
         for p in pdf.pages:
             text.append(p.extract_text() or "")
 
-    result = "\n".join(text)
-    if result.strip():
-        return result
+    joined = "\n".join(text)
+
+    if joined.strip():
+        return joined
 
     doc = fitz.open(path)
     return "\n".join(p.get_text() for p in doc)
@@ -168,38 +197,15 @@ def extract_pdf(path: Path):
 
 def extract_text(path: Path, temp: Path):
 
-    suffix = path.suffix.lower()
+    ext = path.suffix.lower()
 
-    # =============================
-    # HANDLE FILES WITHOUT EXTENSION
-    # =============================
-    if suffix == "" or suffix not in [
-        ".pdf", ".txt", ".zip", ".bin"
-    ]:
-        try:
-            # try reading as text
-            return path.read_text(errors="ignore")
-        except:
-            return path.read_bytes().decode(errors="ignore")
-    # =============================
-    # DIRECT FILE SUPPORT
-    # =============================
-
-    if suffix == ".pdf":
+    if ext == ".pdf":
         return extract_pdf(path)
 
-    if suffix == ".txt":
-        return path.read_text(errors="ignore")
-
-    if suffix == ".bin":
-        # safely decode binary content
+    if ext in [".txt", ".bin"]:
         return path.read_bytes().decode(errors="ignore")
 
-    # =============================
-    # ZIP SUPPORT
-    # =============================
-
-    if suffix == ".zip":
+    if ext == ".zip":
 
         unzip = temp / "unzipped"
         unzip.mkdir(exist_ok=True)
@@ -209,226 +215,144 @@ def extract_text(path: Path, temp: Path):
         data = []
 
         for f in unzip.rglob("*"):
-
             if f.is_dir():
                 continue
 
-            ext = f.suffix.lower()
-
-            # -------- TEXT BASED --------
-            if ext in [".c", ".txt"]:
-                data.append(
-                    f"\n--- FILE: {f.name} ---\n"
-                )
-                data.append(
-                    f.read_text(errors="ignore")
-                )
-
-            # -------- PDF INSIDE ZIP --------
-            elif ext == ".pdf":
-                data.append(
-                    f"\n--- FILE: {f.name} ---\n"
-                )
-                data.append(
-                    extract_pdf(f)
-                )
-
-            # -------- BIN INSIDE ZIP --------
-            elif ext == ".bin":
-                data.append(
-                    f"\n--- FILE: {f.name} ---\n"
-                )
+            if f.suffix.lower() == ".pdf":
+                data.append(extract_pdf(f))
+            else:
                 data.append(
                     f.read_bytes().decode(errors="ignore")
                 )
 
         return "\n".join(data)
 
-    raise HTTPException(400, "Unsupported file")
+    return path.read_bytes().decode(errors="ignore")
 
 
 # =========================================================
-# PROGRAM EXTRACTION
+# PROGRAM PARSER
 # =========================================================
-
-def extract_programs(raw_text):
-
-    prompt = f"""
-Extract ALL C programs.
-
-Return STRICT JSON:
-
-{{
-"programs":[
-{{"title":"","code":""}}
-]
-}}
-
-TEXT:
-{raw_text}
-"""
-
-    res = gemini().generate_content(prompt)
-    data = extract_json(res.text)
-
-    return [ProgramData(**p) for p in data["programs"]]
-
-
-def parse_programs_from_text(raw_text: str):
+def parse_programs_from_text(raw: str):
 
     programs = []
-    current_title = ""
-    current_lines = []
+    title = ""
+    buffer = []
 
-    for line in raw_text.splitlines():
+    for line in raw.splitlines():
+
         if line.strip().startswith("###"):
-            code = "\n".join(current_lines).strip()
-            if code:
+            if buffer:
                 programs.append(
-                    ProgramData(title=current_title, code=code)
+                    ProgramData(
+                        title=title,
+                        code="\n".join(buffer)
+                    )
                 )
-            current_title = line.strip()[3:].strip() or "Untitled Program"
-            current_lines = []
+            title = line[3:].strip()
+            buffer = []
             continue
 
-        current_lines.append(line)
+        buffer.append(line)
 
-    final_code = "\n".join(current_lines).strip()
-    if final_code:
+    if buffer:
         programs.append(
             ProgramData(
-                title=current_title or "Program 1",
-                code=final_code,
+                title=title or "Program",
+                code="\n".join(buffer)
             )
         )
 
     if not programs:
-        raise HTTPException(422, "No programs found in pasted text")
+        raise HTTPException(422, "No programs detected")
 
     return programs
 
 
 # =========================================================
-# ACADEMIC CONTENT
+# AI GENERATION
 # =========================================================
-
-def generate_academic(program, output):
+def generate_academic(program):
 
     prompt = f"""
-Generate AIM and ALGORITHMS.
+Generate AIM, ALGORITHM and OUTPUT.
 
-Return JSON:
+Return STRICT JSON:
 
 {{
 "aim":"",
-"algorithms":[
-{{"name":"","steps":[]}}
-]
+"algorithms":[{{"name":"","steps":[]}}],
+"output":""
 }}
 
 Program:
 {program.code}
 """
 
-    res = gemini().generate_content(prompt)
-    data = extract_json(res.text)
+    data = extract_json(llm_generate(prompt))
 
-    algos = [AlgorithmData(**a) for a in data["algorithms"]]
+    algos = [
+        AlgorithmData(**a)
+        for a in data["algorithms"]
+    ]
 
-    return data["aim"], algos
+    return data["aim"], algos, data["output"]
 
 
-def generate_experiment_metadata(programs, aim, algorithms):
+def generate_metadata():
 
-    prompt = f"""
-Based on the generated lab content, create an experiment heading and final result sentence.
+    prompt = """
+Generate experiment_heading and result.
 
 Return JSON:
-
-{{
+{
 "experiment_heading":"",
 "result":""
-}}
-
-AIM:
-{aim}
-
-ALGORITHMS:
-{json.dumps([a.model_dump() for a in algorithms])}
-
-PROGRAM TITLES:
-{json.dumps([p.title for p in programs])}
+}
 """
 
-    res = gemini().generate_content(prompt)
-    data = extract_json(res.text)
-
-    heading = (data.get("experiment_heading") or "CPU SCHEDULING ALGORITHMS").strip()
-    result = (
-        data.get("result")
-        or "CPU scheduling algorithms are implemented and outputs verified successfully."
-    ).strip()
-
-    return heading, result
+    data = extract_json(llm_generate(prompt))
+    return data["experiment_heading"], data["result"]
 
 
 # =========================================================
-# RUN C PROGRAM
+# LATEX HELPERS
 # =========================================================
+def clean_step(s):
+    return re.sub(r'^\s*\d+[\).\-\s]+', '', s)
 
-def run_program(program, i, temp):
 
-    src = temp / f"p{i}.c"
-    exe = temp / f"p{i}"
-
-    src.write_text(program.code)
-
-    compile = subprocess.run(
-        ["gcc", src, "-o", exe],
-        capture_output=True,
-        text=True,
-    )
-
-    if compile.returncode != 0:
-        return compile.stderr
-
-    run = subprocess.run(
-        [exe],
-        capture_output=True,
-        text=True,
-        timeout=3,
-    )
-
-    return run.stdout
+def latex_escape(text):
+    rep = {
+        "_": r"\_",
+        "&": r"\&",
+        "%": r"\%",
+        "#": r"\#",
+        "{": r"\{",
+        "}": r"\}",
+    }
+    for k, v in rep.items():
+        text = text.replace(k, v)
+    return text
 
 
 # =========================================================
-# LATEX BUILDER (DETERMINISTIC)
+# LATEX BUILDERS
 # =========================================================
-
-ORDER = ["FCFS", "SJF", "Round Robin", "Priority"]
-
-
 def build_algorithms(algorithms):
-
-    ordered = []
-
-    for name in ORDER:
-        for a in algorithms:
-            if name.lower() in a.name.lower():
-                ordered.append(a)
 
     blocks = []
 
-    for algo in ordered:
+    for a in algorithms:
 
         steps = "\n".join(
-            f"    \\item {s}" for s in algo.steps
+            f"\\item {latex_escape(clean_step(s))}"
+            for s in a.steps
         )
 
         blocks.append(
-f"""\\subsection*{{{algo.name}}}
-\\begin{{enumerate}}[label=\\arabic*.]
+f"""\\subsection*{{{latex_escape(a.name)}}}
+\\begin{{enumerate}}
 {steps}
 \\end{{enumerate}}"""
         )
@@ -438,26 +362,25 @@ f"""\\subsection*{{{algo.name}}}
 
 def build_programs(programs):
 
-    sections = []
+    out = []
 
     for i, p in enumerate(programs, 1):
-
-        sections.append(
+        out.append(
 f"""\\subsection*{{Listing {i}: {p.title}}}
 \\begin{{lstlisting}}[language=C]
 {p.code}
 \\end{{lstlisting}}"""
         )
 
-    return "\n".join(sections)
+    return "\n".join(out)
 
 
 def build_outputs(programs):
 
-    out = []
+    blocks = []
 
     for p in programs:
-        out.append(
+        blocks.append(
 f"""\\begin{{tcolorbox}}[myoutputbox,title=Terminal Output]
 \\begin{{verbatim}}
 {p.output}
@@ -465,16 +388,13 @@ f"""\\begin{{tcolorbox}}[myoutputbox,title=Terminal Output]
 \\end{{tcolorbox}}"""
         )
 
-    return "\n".join(out)
+    return "\n".join(blocks)
 
 
 def build_latex(exp: ExperimentData):
 
     latex = LATEX_TEMPLATE
 
-    latex = latex.replace("__NO__", exp.experiment_number)
-    latex = latex.replace("__HEADING__", exp.experiment_heading)
-    latex = latex.replace("__DATE__", exp.date)
     latex = latex.replace("__AIM__", exp.aim)
     latex = latex.replace("__RESULT__", exp.result)
 
@@ -497,8 +417,45 @@ def build_latex(exp: ExperimentData):
 
 
 # =========================================================
+# PIPELINE
+# =========================================================
+def process_programs(programs):
+
+    algorithms = []
+    aim = ""
+
+    for p in programs:
+
+        prog_aim, algos, output = generate_academic(p)
+
+        p.output = output
+
+        if not aim:
+            aim = prog_aim
+
+        algorithms.extend(algos)
+
+    heading, result = generate_metadata()
+
+    return {
+        "experiment_number": "1",
+        "date": "23/09/2025",
+        "experiment_heading": heading,
+        "aim": aim,
+        "algorithms": [a.model_dump() for a in algorithms],
+        "programs": [p.model_dump() for p in programs],
+        "result": result,
+    }
+
+
+# =========================================================
 # API ENDPOINTS
 # =========================================================
+@app.post("/api/process-text")
+async def process_text(payload: TextProcessRequest):
+    programs = parse_programs_from_text(payload.text)
+    return process_programs(programs)
+
 
 @app.post("/api/upload-process")
 async def upload_process(file: UploadFile = File(...)):
@@ -513,58 +470,14 @@ async def upload_process(file: UploadFile = File(...)):
             extract_text, path, temp
         )
 
-        programs = extract_programs(raw)
-        return process_programs(programs, temp)
+        programs = parse_programs_from_text(raw)
 
-    finally:
-        shutil.rmtree(temp, ignore_errors=True)
+        return process_programs(programs)
 
-
-def process_programs(programs: List[ProgramData], temp: Path):
-
-    algorithms = []
-    aim = ""
-
-    for i, p in enumerate(programs, 1):
-
-        output = run_program(p, i, temp)
-        p.output = output
-
-        prog_aim, algos = generate_academic(p, output)
-
-        if not aim:
-            aim = prog_aim
-
-        algorithms.extend(algos)
-
-    heading, result = generate_experiment_metadata(
-        programs, aim, algorithms
-    )
-
-    return {
-        "experiment_number": "1",
-        "date": "23/09/2025",
-        "experiment_heading": heading,
-        "aim": aim,
-        "algorithms": [a.model_dump() for a in algorithms],
-        "programs": [p.model_dump() for p in programs],
-        "result": result
-    }
-
-
-@app.post("/api/process-text")
-async def process_text(payload: TextProcessRequest):
-
-    temp = Path(tempfile.mkdtemp())
-
-    try:
-        programs = parse_programs_from_text(payload.text)
-        return process_programs(programs, temp)
     finally:
         shutil.rmtree(temp, ignore_errors=True)
 
 
 @app.post("/api/generate-latex")
 async def generate_latex(exp: ExperimentData):
-
     return {"latex": build_latex(exp)}
