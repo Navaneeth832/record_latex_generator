@@ -74,6 +74,10 @@ class TextProcessRequest(BaseModel):
     text: str = Field(min_length=1)
 
 
+class QuestionProcessRequest(BaseModel):
+    question: str = Field(min_length=1)
+
+
 class TemplateRequest(BaseModel):
     name: str = ""
     lab_name: str = ""
@@ -775,7 +779,7 @@ def parse_programs_from_text(raw: str):
 def generate_academic(program):
 
     prompt = f"""
-        Act as a precise code-to-JSON parser. Analyze the C code provided and return ONLY a raw JSON object. 
+        Act as a precise code-to-JSON parser. Analyze the C code provided and return ONLY a raw JSON object. The algorithm should be detailed and perfect.
         DO NOT include markdown formatting, DO NOT include ```json tags, and DO NOT include any introductory or concluding text.
 
         ### SCHEMA:
@@ -812,6 +816,48 @@ def generate_metadata(aim):
         heading = "Program Implementation"
 
     return heading, "The execution is complete, and the results have been successfully validated."
+
+
+def generate_programs_from_question(question: str):
+    prompt = f"""
+        You are generating C lab programs from a user question.
+        Return ONLY a raw JSON object, no markdown and no explanations.
+
+        SCHEMA:
+        {{
+          "programs": [
+            {{
+              "title": "Short descriptive title",
+              "code": "Complete C program source code"
+            }}
+          ]
+        }}
+
+        Rules:
+        - Generate at least one valid C program.
+        - Use clear variable names and include required headers.
+        - Keep code runnable.
+        - Do not include output text in this response.
+
+        User question:
+        {question}
+    """
+
+    data = extract_json(llm_generate(prompt))
+    raw_programs = data.get("programs", [])
+
+    if not isinstance(raw_programs, list) or not raw_programs:
+        raise HTTPException(422, "AI did not return any programs for this question")
+
+    programs = []
+    for i, item in enumerate(raw_programs, 1):
+        title = str(item.get("title", "")).strip() or f"Program {i}"
+        code = str(item.get("code", "")).strip()
+        if not code:
+            raise HTTPException(422, f"Generated program {i} has empty code")
+        programs.append(ProgramData(title=title, code=code))
+
+    return programs
 
 
 # =========================================================
@@ -994,6 +1040,12 @@ def process_programs(programs):
 @app.post("/api/process-text")
 async def process_text(payload: TextProcessRequest):
     programs = parse_programs_from_text(payload.text)
+    return process_programs(programs)
+
+
+@app.post("/api/process-question")
+async def process_question(payload: QuestionProcessRequest):
+    programs = generate_programs_from_question(payload.question)
     return process_programs(programs)
 
 

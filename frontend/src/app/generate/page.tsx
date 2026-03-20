@@ -8,7 +8,7 @@ import { parseProgramsFromText } from "@/lib/parsePrograms";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
-type InputMode = "upload" | "paste";
+type InputMode = "upload" | "paste" | "question";
 type Step = 1 | 2 | 3;
 
 const emptyExperiment: ExperimentData = {
@@ -53,6 +53,7 @@ export default function Home() {
   const [data, setData] = useState<ExperimentData>(emptyExperiment);
   const [latex, setLatex] = useState("");
   const [pastedText, setPastedText] = useState("");
+  const [questionText, setQuestionText] = useState("");
   const [uploadFileData, setUploadFileData] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -89,7 +90,7 @@ export default function Home() {
         }
 
         setData(await res.json());
-      } else {
+      } else if (mode === "paste") {
         if (parsedPrograms.length === 0) {
           throw new Error("Please add at least one heading (### Title) with code.");
         }
@@ -98,6 +99,22 @@ export default function Home() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: pastedText }),
+        });
+
+        if (!res.ok) {
+          throw new Error(await res.text());
+        }
+
+        setData(await res.json());
+      } else {
+        if (!questionText.trim()) {
+          throw new Error("Please enter a program question.");
+        }
+
+        const res = await fetch(`${API_BASE}/api/process-question`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: questionText.trim() }),
         });
 
         if (!res.ok) {
@@ -201,6 +218,13 @@ export default function Home() {
             >
               Paste Code
             </button>
+            <button
+              type="button"
+              onClick={() => setMode("question")}
+              className={`rounded-lg px-4 py-2 text-sm font-medium ${mode === "question" ? "bg-white text-slate-900 shadow" : "text-slate-600"}`}
+            >
+              Ask AI
+            </button>
           </div>
 
           <div className="mt-4 space-y-4">
@@ -214,7 +238,7 @@ export default function Home() {
                   className="block w-full rounded-lg border border-slate-300 bg-white p-3 text-sm"
                 />
               </>
-            ) : (
+            ) : mode === "paste" ? (
               <>
                 <MonacoField
                   label="Paste code with headings (### Program Title)"
@@ -225,6 +249,20 @@ export default function Home() {
                 />
                 <p className="text-sm text-slate-600">
                   Parsed programs: <span className="font-semibold">{parsedPrograms.length}</span>
+                </p>
+              </>
+            ) : (
+              <>
+                <label className="block text-sm font-semibold text-slate-700">Program question</label>
+                <textarea
+                  value={questionText}
+                  onChange={(e) => setQuestionText(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 p-3"
+                  rows={8}
+                  placeholder="Example: Write a C program to implement binary search with user input and show sample output."
+                />
+                <p className="text-sm text-slate-600">
+                  AI will generate the full program code, algorithm, and output from this question.
                 </p>
               </>
             )}
