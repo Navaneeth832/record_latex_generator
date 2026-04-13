@@ -1,0 +1,281 @@
+\documentclass[12pt,a4paper]{report}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[utf8]{inputenc}
+
+% --- C code listing style ---
+\lstdefinestyle{cstyle}{
+    language=C,
+    basicstyle=\ttfamily\footnotesize,
+    backgroundcolor=\color{gray!5},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=8pt,
+    frame=single,
+    rulecolor=\color{gray!50},
+    showstringspaces=false,
+    breaklines=true,
+    keywordstyle=\color{blue!80!black}\bfseries,
+    commentstyle=\color{green!40!black}\itshape,
+    stringstyle=\color{orange!70!black},
+    tabsize=4,
+    captionpos=b,
+    xleftmargin=10pt,
+    xrightmargin=5pt
+}
+
+\usepackage[most]{tcolorbox}
+
+\tcbuselibrary{listings,skins,breakable}
+\usepackage{graphicx}
+\usepackage{adjustbox}
+\usepackage{amsmath}
+\usepackage{pdflscape}
+\usepackage{fancyhdr}
+\usepackage{cite}
+\usepackage{calc}
+\usepackage{framed}
+\usepackage{a4wide}
+\usepackage{float}
+\usepackage{epsfig}
+\usepackage{longtable}
+\usepackage{enumerate}
+\usepackage{afterpage}
+\usepackage{xcolor}
+\usepackage{multirow}
+\usepackage{ragged2e}
+\usepackage{gensymb}
+\usepackage{amsfonts} 
+\usepackage[left=3.5cm,top=1.5cm,right=3cm,bottom=2cm]{geometry}
+\usepackage{setspace}           
+\usepackage{float}
+\usepackage{txfonts}
+\usepackage{lipsum}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows,calc,shapes}
+\usepackage{listings}
+\usepackage{csvsimple}
+\usepackage{booktabs}
+\usepackage[most]{tcolorbox}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+
+\tcbset{
+    myoutputbox/.style={
+        colback=blue!3!white,
+        colframe=blue!60!black,
+        boxrule=0.6pt,
+        arc=3pt,
+        left=4pt,
+        right=4pt,
+        top=4pt,
+        bottom=4pt,
+        fonttitle=\bfseries\small,
+        fontupper=\small,
+        coltitle=black,
+    }
+}
+\usepackage{tcolorbox}
+\tcbuselibrary{listings, breakable}
+
+\tcbset{
+    terminalstyle/.style={
+        enhanced,
+        breakable,
+        colback=black,
+        coltext=white,
+        colframe=black,
+        boxrule=0.4pt,
+        sharp corners,
+        fontupper=\ttfamily\footnotesize,
+        left=6pt,
+        right=6pt,
+        top=4pt,
+        bottom=4pt,
+        width=\linewidth,
+        arc=2pt,
+        before skip=6pt,
+        after skip=6pt,
+        listing only,
+        listing options={
+            basicstyle=\ttfamily\footnotesize,
+            breaklines=true,
+            breakatwhitespace=false,
+            showstringspaces=false,
+        }
+    }
+}
+
+% --- Define SQL style ---
+\lstdefinestyle{customsql}{
+  language=SQL,
+  keywordstyle=\color{magenta}\bfseries,
+  commentstyle=\color{green!60!black}\itshape,
+  stringstyle=\color{blue},
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  showstringspaces=false,
+  columns=fullflexible
+}
+
+\lstdefinestyle{psql}{
+    basicstyle=\ttfamily\small,
+    columns=fullflexible,
+    keepspaces=true,
+    xleftmargin=0pt,
+    showstringspaces=false,
+    breaklines=false,
+    aboveskip=0pt,
+    belowskip=0pt,
+    lineskip=-1pt
+}
+
+\csvstyle{escapeunderscores}{%
+    table head=\toprule, 
+    table foot=\bottomrule,
+    filter string replace={_}{\_}
+}
+\tikzset{
+  entity/.style={draw, rectangle, minimum width=2cm, minimum height=1cm},
+  attribute/.style={draw, ellipse, minimum width=1.5cm, minimum height=0.2cm},
+  relation/.style={draw, diamond, minimum width=2.5cm, minimum height=1.2cm},
+  line/.style={-},
+}
+\newcommand{\drawattributes}[5]{
+  \pgfmathsetmacro{\totalattrs}{#3}
+  \pgfmathsetmacro{\pkcount}{#4}
+  
+  \foreach \attr [count=\i] in {#2} {
+    \edef\attrname{#1_attr\i}
+    
+    \def\usemanual{0}
+    \ifnum\i=1
+      \ifnum#5=1 \def\usemanual{1}\fi
+    \fi
+    \ifnum\i=2
+      \ifnum#5=2 \def\usemanual{1}\fi
+    \fi
+    \ifnum\i=3
+      \ifnum#5=3 \def\usemanual{1}\fi
+    \fi
+    \ifnum\i=4
+      \ifnum#5=4 \def\usemanual{1}\fi
+    \fi
+    \ifnum\i=5
+      \ifnum#5=5 \def\usemanual{1}\fi
+    \fi
+    
+    \ifnum\usemanual=1
+      \@ifundefined{#1attr\i x}{
+        \pgfmathtruncatemacro{\currentpos}{\i}
+        \ifnum\currentpos=1
+            \coordinate (\attrname-pos) at ($(#1) + (-1.2cm,2.5cm)$);
+        \else\ifnum\currentpos=2
+            \coordinate (\attrname-pos) at ($(#1) + (1.2cm,2.5cm)$);
+        \else\ifnum\currentpos=3
+            \coordinate (\attrname-pos) at ($(#1) + (-2.2cm,1.75cm)$);
+        \else
+          \coordinate (\attrname-pos) at ($(#1) + (0cm,-2.5cm)$);
+        \fi\fi\fi
+      }{
+        \coordinate (\attrname-pos) at ($(#1) + (\csname #1attr\i x\endcsname,\csname #1attr\i y\endcsname)$);
+      }
+    \else
+      \pgfmathtruncatemacro{\currentpos}{\i}
+      \ifnum\currentpos=1
+        \coordinate (\attrname-pos) at ($(#1) + (-1.2cm,2.5cm)$);
+      \else\ifnum\currentpos=2
+        \coordinate (\attrname-pos) at ($(#1) + (1.2cm,2.5cm)$);
+      \else\ifnum\currentpos=3
+          \ifnum\totalattrs = 3
+              \coordinate (\attrname-pos) at ($(#1) + (0cm,+2.5cm)$);
+          \else
+              \coordinate (\attrname-pos) at ($(#1) + (-2.2cm,1.75cm)$);
+          \fi
+      \else\ifnum\currentpos=4
+        \coordinate (\attrname-pos) at ($(#1) + (2.2cm,1.75cm)$);
+      \else\ifnum\currentpos=5
+        \coordinate (\attrname-pos) at ($(#1) + (-3.5cm,-1.2cm)$);
+      \else\ifnum\currentpos=6
+        \coordinate (\attrname-pos) at ($(#1) + (3.5cm,-1.2cm)$);
+      \else\ifnum\currentpos=7
+          \ifnum\totalattrs = 7
+              \coordinate (\attrname-pos) at ($(#1) + (0cm,-2.5cm)$);
+          \else
+              \coordinate (\attrname-pos) at ($(#1) + (-1.8cm,-2.5cm)$);
+          \fi
+      \else\ifnum\currentpos=8
+        \coordinate (\attrname-pos) at ($(#1) + (1.8cm,-2.5cm)$);
+      \else
+        \pgfmathtruncatemacro{\extrapos}{\currentpos-8}
+        \pgfmathtruncatemacro{\extraangle}{30 + (\extrapos-1)*45}
+        \coordinate (\attrname-pos) at ($(#1) + (\extraangle:4.5cm)$);
+      \fi\fi\fi\fi\fi\fi\fi\fi
+    \fi
+    
+    \ifnum\i>\pkcount
+      \node[attribute] (\attrname) at (\attrname-pos) {\attr};
+    \else
+      \node[attribute] (\attrname) at (\attrname-pos) {\underline{\attr}};
+    \fi
+    
+    \draw[line] (#1) -- (\attrname);
+  }
+}
+
+\newcommand{\setmanualpos}[4]{
+  \expandafter\def\csname #1attr#2x\endcsname{#3}
+  \expandafter\def\csname #1attr#2y\endcsname{#4}
+}
+
+\newcommand{\Usefont}[1]{\fontfamily{#1}\selectfont}
+
+\usepackage{lscape}
+\renewcommand{\baselinestretch}{1.7} 
+
+\usepackage{blindtext}
+\usepackage{xpatch}
+\usepackage{url}
+\usepackage{leqno}
+\usepackage{subcaption}
+\linespread{1.5}
+\usepackage[intoc, english]{nomencl}
+\hyphenpenalty=5000
+\tolerance=1000
+\usepackage[nottoc]{tocbibind}
+
+\bibliographystyle{IEEEtran}
+\renewcommand{\bibname}{References}
+
+\begin{document}
+
+\gdef \sem{__SEMESTER__ Semester}
+\gdef \courseCode{__COURSE_CODE__}
+\gdef \courseName{__COURSE_NAME__}
+\gdef \deptName{__DEPARTMENT__}
+\gdef \studentname{__NAME__}
+\gdef \ktuid{__ROLL_NUMBER__}
+\gdef \class {S6 CSE}
+\gdef \batch {__SECTION__}
+\gdef \collegeName{__INSTITUTION__}
+\gdef \collegePlace{Thiruvananthapuram - 695016}
+\gdef \year{__ACADEMIC_YEAR__}
+
+\include {cover_page}
+\include{follow_page}
+\include{contents}
+\include{Expt2_1_1}
+\include{Expt2_1_2}
+\include{Expt2_2_1}
+\include{Expt2_2_2}
+\include{Expt3_1}
+\include{Expt3_2}
+\include{Expt3_3}
+\include{Expt3_4}
+\vspace{2cm}
+\end{document}

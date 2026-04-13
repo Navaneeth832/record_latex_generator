@@ -1,0 +1,236 @@
+\documentclass[12pt,a4paper]{report}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{titlesec}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{calc}
+\usepackage{tocloft}
+\geometry{margin=1in}
+
+\usepackage{float}
+\setcounter{tocdepth}{3}
+\setcounter{secnumdepth}{3}
+\renewcommand{\chaptername}{}
+\renewcommand{\cftchapafterpnum}{\vspace{6pt}}
+
+\titleformat{\subsection}
+{\normalfont\large\bfseries}{\thesubsection}{1em}{}[\vspace{0.2em}\hrule]
+
+\setlength{\cftbeforechapskip}{10pt}   % space before each chapter entry
+
+\setlength{\cftbeforesecskip}{2pt}    % space before each section entry
+\setlength{\cftbeforesubsecskip}{2pt} % space before each subsection entry
+% Remove indentation for all TOC entries
+\setlength{\cftchapindent}{0pt}
+\setlength{\cftsecindent}{0pt}
+\setlength{\cftsubsecindent}{1.5em}    % experiments indented under cycle
+\setlength{\cftsubsubsecindent}{3em}   % programs indented under experiments
+% Custom counter for experiments that resets with each chapter
+\newcounter{expnum}[chapter]  % This makes expnum reset when chapter increments
+
+% Chapter and section formatting
+\usepackage{titlesec}
+
+\titleformat{\chapter}[block]
+{\normalfont\huge\bfseries}
+{\centering\chaptername\ \thechapter}
+{0pt}
+{\centering}
+
+\titlespacing*{\chapter}{0pt}{-30pt}{20pt}
+
+\titleformat{\section}
+{\normalfont\Large\bfseries\centering}{\thesection}{1em}{}
+
+% Code listing style
+\lstdefinestyle{cstyle}{
+	backgroundcolor=\color{white},   
+	commentstyle=\color{green!60!black},
+	keywordstyle=\color{blue},
+	numberstyle=\tiny\color{gray},
+	stringstyle=\color{red!70!black},
+	basicstyle=\ttfamily\footnotesize,
+	breakatwhitespace=false,         
+	breaklines=true,                  
+	keepspaces=true,                                  
+	showspaces=false,                
+	showstringspaces=false,
+	showtabs=false,                  
+	tabsize=4,
+	language=C
+}
+\lstdefinestyle{asmstyle}{
+	backgroundcolor=\color{white},   
+	commentstyle=\color{green!60!black},
+	keywordstyle=\color{blue},
+	numberstyle=\tiny\color{gray},
+	stringstyle=\color{red!70!black},
+	basicstyle=\ttfamily\footnotesize,
+	breakatwhitespace=false,         
+	breaklines=true,                 
+	captionpos=b,                    
+	keepspaces=true,                 
+	numbers=none,                    
+	showspaces=false,                
+	showstringspaces=false,
+	showtabs=false,                  
+	tabsize=4,
+	frame=none,
+	language={[x86masm]Assembler}
+}
+\lstdefinestyle{plaintext}{
+	backgroundcolor=\color{gray!10},   
+	basicstyle=\ttfamily\normalsize\color{black},
+	breakatwhitespace=false,         
+	breaklines=true,                 
+	captionpos=b,                    
+	keepspaces=true,                 
+	numbers=none,                    
+	showspaces=false,                
+	showstringspaces=false,
+	showtabs=false,                  
+	tabsize=1,
+	frame=none,
+	language={},
+	keywordstyle=\color{black},
+	stringstyle=\color{black},
+	commentstyle=\color{black},
+	moredelim=[is][\color{green!70!black}\bfseries]{@prompt@}{@end@},
+	moredelim=[is][\color{cyan!60!black}]{@path@}{@end@},
+	escapeinside={||}{||},
+	xleftmargin=0pt,
+	xrightmargin=0pt,
+	framexleftmargin=0pt,
+}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins, listings}
+
+\lstnewenvironment{terminal}[1][]
+{\lstset{style=plaintext, #1}}
+{}
+
+% Wrap in dashed tcolorbox
+\newenvironment{termout}{
+	\begin{tcolorbox}[
+		enhanced,
+		colback=gray!10,
+		colframe=gray!40,
+		boxrule=2pt,
+		sharp corners,
+		left=2pt, right=2pt, top=1pt, bottom=1pt,
+		borderline={0.4pt}{0pt}{gray!40, dashed}
+		]
+	}{
+	\end{tcolorbox}
+}
+\lstset{style=cstyle}
+
+
+% Custom experiment environment with 3 parameters
+% Custom experiment environment with 3 parameters
+\newenvironment{labexperiment}[3]{%
+	\refstepcounter{expnum}%
+	\setcounter{subsection}{0}
+	
+	\noindent\textbf{EXPERIMENT NO. \theexpnum}
+	
+	\section{#1}
+	\vspace{-0.5cm}
+	\noindent\rule{\textwidth}{0.4pt}
+	\vspace{0.3cm}
+	
+	\noindent\textbf{Date: }#2\\
+	
+	\noindent\textbf{AIM: }#3
+	\vspace{0.5cm}
+	
+	\noindent
+}{}
+
+% Custom command for centered chapter pages
+\newcommand{\CenteredChapter}[1]{
+	\clearpage
+	\refstepcounter{chapter} 
+	
+	% Add to TOC
+	\addcontentsline{toc}{chapter}{#1}
+	
+	\vspace*{\fill}
+	\begin{center}
+		{\Huge\bfseries
+			\parbox{0.85\textwidth}{\centering #1}
+		}
+	\end{center}
+	\vspace*{\fill}
+	
+	\clearpage
+	\setcounter{expnum}{0}
+}
+\titleformat{\chapter}[display]
+{\normalfont\huge\bfseries\centering}{\chaptertitlename\ \thechapter}{20pt}{\Huge\centering}
+
+
+\begin{document}
+  \gdef \sem{__SEMESTER__ Semester}
+  \gdef \courseCode{__COURSE_CODE__}
+  \gdef \courseName{__COURSE_NAME__}
+  \gdef \deptName{__DEPARTMENT__}
+  \gdef \studentname{__NAME__}
+  \gdef \ktuid{__ROLL_NUMBER__}
+  \gdef \class {S6 CSE}
+  \gdef \batch {__SECTION__}
+  \gdef \collegeName{__INSTITUTION__}
+  \gdef \collegePlace{Thiruvananthapuram - 695016}
+  \gdef \year{__ACADEMIC_YEAR__}
+
+	\include{cover_page}
+	\include{follow_page}
+	
+	\newpage
+	
+	
+	
+	
+	\tableofcontents
+	\newpage
+	\input{contents}
+	\newpage
+	\CenteredChapter{CYCLE 1 -- FAMILIARIZATION OF NETWORK COMMANDS AND SYSTEM CALLS}
+	\newpage
+	
+	\setcounter{chapter}{1}
+	%\input{cycle1}
+	
+	\CenteredChapter{CYCLE 2 -- SOCKET PROGRAMMING USING TCP}
+	\newpage
+	
+	%\input{cycle2}
+	\CenteredChapter{CYCLE 3 -- SLIDING WINDOW FLOW CONTROL PROTOCOLS}
+	\newpage
+	
+	%\input{cycle3}
+	\CenteredChapter{CYCLE 4 -- IMPLEMENTATION OF ROUTING PROTOCOLS}
+	\newpage
+	
+	%\input{cycle4}
+	\CenteredChapter{CYCLE 5 -- IMPLEMENTATION OF CONGESTION CONTROL ALGORITHMS}
+	\newpage
+	
+	%\input{cycle5}
+	
+	\CenteredChapter{CYCLE 6 -- WIRESHARK}
+	\newpage
+	
+	%\input{cycle6}
+	\CenteredChapter{CYCLE 7 -- NS2 SIMULATOR}
+	\newpage
+	
+	%\input{cycle7}
+	
+	
+\end{document}

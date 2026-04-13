@@ -164,12 +164,13 @@ Open: `http://localhost:3000`
 
 ## Admin: Add More Built-In Templates
 
-Built-in templates are defined in `backend/app/main.py`.
+Built-in templates are stored under `backend/app/builtin_templates/` and registered in `backend/app/main.py`.
 
 1. Add a new LaTeX file set.
-   Create new constants for `main.tex`, `cover_page.tex`, `follow_page.tex`, and `contents.tex`.
+   Create a new folder such as `backend/app/builtin_templates/template-3/` and add:
+   `main.tex`, `cover_page.tex`, `follow_page.tex`, and `contents.tex`.
 2. Register the template inside `BUILTIN_TEMPLATES`.
-   Give it a new ID such as `"template-3"` plus `name`, `description`, `download_filename`, and a `files` map.
+   Give it a new ID such as `"template-3"` plus `name`, `description`, `download_filename`, and a `files` map loaded with `read_template_file(...)`.
 3. Add its preview design in `build_builtin_preview_pdf(template_id)`.
    That returned PDF is the exact built-in preview users will see on the home page.
 4. Restart the backend.
@@ -182,10 +183,10 @@ BUILTIN_TEMPLATES["template-3"] = {
     "description": "Short description shown on the home page.",
     "download_filename": "template-3-minimal-record.zip",
     "files": {
-        "main.tex": ZIP_MAIN_TEMPLATE_3,
-        "cover_page.tex": ZIP_COVER_TEMPLATE_3,
-        "follow_page.tex": ZIP_FOLLOW_TEMPLATE_3,
-        "contents.tex": ZIP_CONTENTS_TEMPLATE_3,
+        "main.tex": read_template_file("template-3", "main.tex"),
+        "cover_page.tex": read_template_file("template-3", "cover_page.tex"),
+        "follow_page.tex": read_template_file("template-3", "follow_page.tex"),
+        "contents.tex": read_template_file("template-3", "contents.tex"),
     },
 }
 ```
