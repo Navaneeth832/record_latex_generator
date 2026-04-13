@@ -79,20 +79,45 @@ class QuestionProcessRequest(BaseModel):
 
 
 class TemplateRequest(BaseModel):
-    name: str = ""
-    lab_name: str = ""
-    course_code: str = ""
-    course_name: str = ""
-    department: str = ""
-    institution: str = ""
-    semester: str = ""
-    academic_year: str = ""
-    submitted_to: str = ""
-    submitted_by: str = ""
-    roll_number: str = ""
-    section: str = ""
+    name: str = "YOUR NAME"
+    lab_name: str = "COMPUTER NETWORKS LAB"
+    course_code: str = "CSL 332"
+    course_name: str = "COMPUTER NETWORKS LAB"
+    department: str = "COMPUTER SCIENCE AND ENGINEERING"
+    institution: str = "COLLEGE OF ENGINEERING TRIVANDRUM"
+    semester: str = "S6"
+    academic_year: str = "2025-2026"
+    submitted_to: str = "FACULTY IN CHARGE"
+    submitted_by: str = "YOUR NAME"
+    roll_number: str = "S23XXX"
+    section: str = "A"
     experiment_title: str = ""
     date: str = ""
+    contents_cycles: List["TemplateCycle"] = Field(default_factory=list)
+
+
+class TemplateEntry(BaseModel):
+    serial_number: int
+    title: str
+
+
+class TemplateCycle(BaseModel):
+    cycle_number: int
+    title: str
+    entries: List[TemplateEntry] = Field(default_factory=list)
+
+
+class ContentsTextRequest(BaseModel):
+    text: str = Field(min_length=1)
+
+
+class ContentsAnalysisResponse(BaseModel):
+    cycles: List[TemplateCycle]
+    contents_tex: str
+    generated_files: List[str]
+
+
+TemplateRequest.model_rebuild()
 
 
 class TemplateSummary(BaseModel):
@@ -162,7 +187,8 @@ __OUTPUTS__
 __RESULT__
 """
 
-# =========================================================`r`n# LLM ABSTRACTION
+# =========================================================
+# LLM ABSTRACTION
 # =========================================================
 def llm_generate(prompt: str) -> str:
 
@@ -387,6 +413,51 @@ def generate_programs_from_question(question: str):
     return programs
 
 
+def parse_contents_structure(raw_text: str):
+    prompt = f"""
+        Convert the following lab-record table-of-contents text into ONLY a raw JSON object.
+        Do not use markdown.
+
+        Schema:
+        {{
+          "cycles": [
+            {{
+              "cycle_number": 1,
+              "title": "Cycle title without the leading cycle number if possible",
+              "entries": [
+                {{
+                  "serial_number": 1,
+                  "title": "Experiment title"
+                }}
+              ]
+            }}
+          ]
+        }}
+
+        Rules:
+        - Preserve experiment order exactly.
+        - Group experiments under the correct cycle.
+        - Omit empty rows.
+        - Keep titles concise but faithful to the source.
+        - If the source says "CYCLE 2 --- SOCKET PROGRAMMING", set cycle_number to 2 and title to "SOCKET PROGRAMMING".
+
+        Source text:
+        {raw_text}
+    """
+
+    data = extract_json(llm_generate(prompt))
+    raw_cycles = data.get("cycles", [])
+    if not isinstance(raw_cycles, list) or not raw_cycles:
+        raise HTTPException(422, "Could not detect any cycle information from the table of contents.")
+
+    cycles = [TemplateCycle(**cycle) for cycle in raw_cycles]
+    valid_cycles = [cycle for cycle in cycles if cycle.entries]
+    if not valid_cycles:
+        raise HTTPException(422, "The table of contents did not include any experiment rows.")
+
+    return valid_cycles
+
+
 # =========================================================
 # LATEX HELPERS
 # =========================================================
@@ -423,6 +494,206 @@ UPLOADED_TEMPLATE_DIR = TEMPLATE_LIBRARY_DIR / "uploads"
 def read_template_file(*parts: str):
     path = BUILTIN_TEMPLATE_DIR.joinpath(*parts)
     return path.read_text(encoding="utf-8")
+
+
+def format_cycle_heading(cycle: TemplateCycle):
+    title = cycle.title.strip()
+    if re.match(r"^CYCLE\s+\d+", title, re.IGNORECASE):
+        return title.upper()
+    return f"CYCLE {cycle.cycle_number} --- {title.upper()}"
+
+
+def build_template1_file_name(cycle_number: int, entry_index: int):
+    return f"Expt{cycle_number}_{entry_index}_1.tex"
+
+
+def build_template2_file_name(cycle_number: int):
+    return f"CYCLE{cycle_number}.tex"
+
+
+def build_template1_contents_tex(cycles: List[TemplateCycle]):
+    lines = [
+        r"\begin{center}",
+        r"\vspace*{1cm}",
+        r"{\LARGE \textbf{INDEX}}",
+        r"\vspace{0.5cm}",
+        r"\end{center}",
+        r"\setlength{\LTleft}{\fill}",
+        r"\setlength{\LTright}{\fill}",
+        "",
+        r"\begin{longtable}{|c|p{7cm}|p{1cm}|c|c|}",
+        r"\hline",
+        r"\textbf{SL NO.} & \centering\textbf{EXPERIMENT NAME} & \textbf{PAGE NO.} & \textbf{DATE} & \textbf{SIGNATURE} \tabularnewline",
+        r"\hline",
+        r"\endfirsthead",
+        "",
+        r"\hline",
+        r"\textbf{SL NO.} & \centering\textbf{EXPERIMENT NAME} & \textbf{PAGE NO.} & \textbf{DATE} & \textbf{SIGNATURE} \tabularnewline",
+        r"\hline",
+        r"\endhead",
+        "",
+    ]
+
+    for cycle in cycles:
+        lines.append(rf"\multicolumn{{5}}{{|c|}}{{\textbf{{{latex_escape(format_cycle_heading(cycle))}}}}} \tabularnewline")
+        lines.append(r"\hline")
+        for entry in cycle.entries:
+            lines.append(
+                rf"{entry.serial_number} & {latex_escape(entry.title.upper())} &  &  & \tabularnewline \hline"
+            )
+        lines.append("")
+
+    lines.append(r"\end{longtable}")
+    return "\n".join(lines)
+
+
+def build_template2_label(cycle_number: int, serial_number: int):
+    return f"exp:c{cycle_number}-e{serial_number}"
+
+
+def build_template2_contents_tex(cycles: List[TemplateCycle]):
+    lines = [
+        r"\newpage",
+        r"\thispagestyle{empty}",
+        r"\renewcommand{\arraystretch}{1.6}",
+        r"\setlength{\tabcolsep}{6pt}",
+        r"\begin{center}",
+        r"{\Large\bfseries LIST OF EXPERIMENTS}",
+        r"\end{center}",
+        r"\vspace{0.5cm}",
+        r"\begin{center}",
+        r"\begin{longtable}{|>{\centering\arraybackslash}p{1.2cm}|p{8.2cm}|>{\centering\arraybackslash}p{1.5cm}|>{\centering\arraybackslash}p{2.5cm}|>{\centering\arraybackslash}p{1.5cm}|}",
+        r"\hline",
+        r"\textbf{SL NO.} & \textbf{EXPERIMENT NAME} & \textbf{PAGE NO.} & \textbf{DATE} & \textbf{SIGN.} \\",
+        r"\hline",
+        r"\endfirsthead",
+        r"\hline",
+        r"\textbf{SL NO.} & \textbf{EXPERIMENT NAME} & \textbf{PAGE NO.} & \textbf{DATE} & \textbf{SIGN.} \\",
+        r"\hline",
+        r"\endhead",
+        "",
+    ]
+
+    for cycle in cycles:
+        lines.append(rf"\multicolumn{{5}}{{|p{{14.5cm}}|}}{{\textbf{{{latex_escape(format_cycle_heading(cycle))}}}}} \\")
+        lines.append(r"\hline")
+        for entry in cycle.entries:
+            label = build_template2_label(cycle.cycle_number, entry.serial_number)
+            lines.append(
+                rf"{entry.serial_number} & {latex_escape(entry.title.upper())} & \pageref{{{label}}} &  & \\"
+            )
+            lines.append(r"\hline")
+        lines.append("")
+
+    lines.extend([r"\end{longtable}", r"\end{center}", r"\renewcommand{\arraystretch}{1.0}", r"\newpage"])
+    return "\n".join(lines)
+
+
+def build_template1_experiment_files(cycles: List[TemplateCycle]):
+    files = {}
+    include_lines = []
+
+    for cycle in cycles:
+        for entry_index, entry in enumerate(cycle.entries, 1):
+            filename = build_template1_file_name(cycle.cycle_number, entry_index)
+            include_lines.append(rf"\include{{{Path(filename).stem}}}")
+            files[filename] = (
+                f"% Auto-generated placeholder for {format_cycle_heading(cycle)}\n"
+                f"% Experiment {entry.serial_number}: {entry.title}\n\n"
+                f"\\section*{{{latex_escape(entry.title.upper())}}}\n"
+                "% Add experiment content here.\n"
+            )
+
+    return files, include_lines
+
+
+def inject_template1_main(main_template: str, include_lines: List[str]):
+    cleaned = re.sub(r"^\s*\\include\{Expt[^}]+\}\s*\n?", "", main_template, flags=re.MULTILINE)
+    marker = r"\include{contents}"
+    if marker not in cleaned:
+        raise HTTPException(500, "Template 1 main.tex is missing the contents include marker.")
+    return cleaned.replace(marker, marker + "\n" + "\n".join(include_lines), 1)
+
+
+def build_template2_cycle_files(cycles: List[TemplateCycle]):
+    files = {}
+    cycle_inputs = []
+
+    for cycle in cycles:
+        filename = build_template2_file_name(cycle.cycle_number)
+        cycle_inputs.append(rf"\input{{{Path(filename).stem}}}")
+        blocks = []
+        for entry in cycle.entries:
+            label = build_template2_label(cycle.cycle_number, entry.serial_number)
+            blocks.append(
+                "\n".join(
+                    [
+                        rf"\begin{{labexperiment}}{{{latex_escape(entry.title.upper())}}}{{}}{{}}",
+                        rf"\label{{{label}}}",
+                        "% Add experiment content here.",
+                        r"\end{labexperiment}",
+                        r"\newpage",
+                    ]
+                )
+            )
+        files[filename] = "\n\n".join(blocks).strip() + "\n"
+
+    return files, cycle_inputs
+
+
+def inject_template2_main(main_template: str, cycles: List[TemplateCycle], cycle_inputs: List[str]):
+    prefix, separator, suffix = main_template.partition(r"\input{contents}")
+    if not separator:
+        raise HTTPException(500, "Template 2 main.tex is missing the contents input marker.")
+
+    _, end_marker, trailer = suffix.rpartition(r"\end{document}")
+    if not end_marker:
+        raise HTTPException(500, "Template 2 main.tex is missing \\end{document}.")
+
+    generated_blocks = []
+    for cycle, cycle_input in zip(cycles, cycle_inputs):
+        generated_blocks.append(
+            "\n".join(
+                [
+                    r"\newpage",
+                    rf"\CenteredChapter{{{latex_escape(format_cycle_heading(cycle))}}}",
+                    r"\newpage",
+                    cycle_input,
+                    r"\newpage",
+                ]
+            )
+        )
+
+    return (
+        prefix
+        + separator
+        + "\n"
+        + "\n".join(generated_blocks)
+        + "\n"
+        + end_marker
+        + trailer
+    )
+
+
+def build_template_assets(template_id: str, cycles: List[TemplateCycle], base_files: dict):
+    files = dict(base_files)
+
+    if template_id == "template-1":
+        experiment_files, include_lines = build_template1_experiment_files(cycles)
+        files["contents.tex"] = build_template1_contents_tex(cycles)
+        files["main.tex"] = inject_template1_main(files["main.tex"], include_lines)
+        files.update(experiment_files)
+        generated_files = ["contents.tex", "main.tex", *experiment_files.keys()]
+    elif template_id == "template-2":
+        cycle_files, cycle_inputs = build_template2_cycle_files(cycles)
+        files["contents.tex"] = build_template2_contents_tex(cycles)
+        files["main.tex"] = inject_template2_main(files["main.tex"], cycles, cycle_inputs)
+        files.update(cycle_files)
+        generated_files = ["contents.tex", "main.tex", *cycle_files.keys()]
+    else:
+        raise HTTPException(404, "Built-in template not found")
+
+    return files, generated_files
 
 BUILTIN_TEMPLATES = {
     "template-1": {
@@ -594,23 +865,40 @@ def build_builtin_preview_pdf(template_id: str):
 def get_builtin_template_files(template_id: str):
     if template_id not in BUILTIN_TEMPLATES:
         raise HTTPException(404, "Built-in template not found")
-    return BUILTIN_TEMPLATES[template_id]["files"]
-def build_template_zip(payload: TemplateRequest, template_files: Optional[dict] = None):
+    return {
+        "main.tex": read_template_file(template_id, "main.tex"),
+        "cover_page.tex": read_template_file(template_id, "cover_page.tex"),
+        "follow_page.tex": read_template_file(template_id, "follow_page.tex"),
+        "contents.tex": read_template_file(template_id, "contents.tex"),
+    }
+
+
+def analyze_contents_for_template(template_id: str, raw_text: str):
+    cycles = parse_contents_structure(raw_text)
+    base_files = get_builtin_template_files(template_id)
+    rendered_files, generated_files = build_template_assets(template_id, cycles, base_files)
+    return ContentsAnalysisResponse(
+        cycles=cycles,
+        contents_tex=rendered_files["contents.tex"],
+        generated_files=generated_files,
+    )
+
+
+def build_template_zip(payload: TemplateRequest, template_id: str = "template-1", template_files: Optional[dict] = None):
     values = payload.model_dump()
-    files = template_files or BUILTIN_TEMPLATES["template-1"]["files"]
+    files = dict(template_files or get_builtin_template_files(template_id))
+
+    if payload.contents_cycles:
+        files, _ = build_template_assets(template_id, payload.contents_cycles, files)
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        # 1. Render and add your .tex files
         for file_name, template in files.items():
             zf.writestr(file_name, render_zip_template(template, values))
-        
-        # 2. Add the logo to the 'figures' folder
-        # Ensure the path to your local file is correct!
+
         logo_path = BASE_DIR / "figures" / "cet_logo.jpeg"
         
         if logo_path.exists():
-            # The second argument 'arcname' sets the path inside the ZIP
             zf.write(logo_path, arcname="figures/cet_logo.jpeg")
         else:
             print(f"Lowkey error: Logo not found at {logo_path} ðŸ’€")
@@ -800,6 +1088,32 @@ async def upload_template(file: UploadFile = File(...)):
     return build_uploaded_template_summary(target)
 
 
+@app.post("/api/templates/{template_id}/analyze-contents-text", response_model=ContentsAnalysisResponse)
+async def analyze_template_contents_text(template_id: str, payload: ContentsTextRequest):
+    if template_id not in BUILTIN_TEMPLATES:
+        raise HTTPException(400, "Contents analysis is only available for built-in templates.")
+    return analyze_contents_for_template(template_id, payload.text)
+
+
+@app.post("/api/templates/{template_id}/analyze-contents-upload", response_model=ContentsAnalysisResponse)
+async def analyze_template_contents_upload(template_id: str, file: UploadFile = File(...)):
+    if template_id not in BUILTIN_TEMPLATES:
+        raise HTTPException(400, "Contents analysis is only available for built-in templates.")
+
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+        raise HTTPException(400, "Image OCR is not available in the current backend. Paste the contents text or upload a PDF.")
+
+    temp = Path(tempfile.mkdtemp())
+    try:
+        path = temp / (file.filename or "contents-upload")
+        path.write_bytes(await file.read())
+        raw_text = await asyncio.to_thread(extract_text, path, temp)
+        return analyze_contents_for_template(template_id, raw_text)
+    finally:
+        shutil.rmtree(temp, ignore_errors=True)
+
+
 @app.get("/api/templates/{template_id}/preview")
 async def get_template_preview(template_id: str):
     if template_id not in BUILTIN_TEMPLATES:
@@ -814,7 +1128,7 @@ async def get_template_preview(template_id: str):
 @app.post("/api/templates/{template_id}/download")
 async def download_selected_template(template_id: str, payload: TemplateRequest):
     if template_id in BUILTIN_TEMPLATES:
-        zip_buffer = build_template_zip(payload, get_builtin_template_files(template_id))
+        zip_buffer = build_template_zip(payload, template_id, get_builtin_template_files(template_id))
         filename = build_builtin_template_summary(template_id).download_filename
     else:
         template_path = get_uploaded_template_path(template_id)
@@ -827,7 +1141,7 @@ async def download_selected_template(template_id: str, payload: TemplateRequest)
 
 @app.post("/api/download-template")
 async def download_template(payload: TemplateRequest):
-    zip_buffer = build_template_zip(payload)
+    zip_buffer = build_template_zip(payload, "template-1")
     headers = {"Content-Disposition": 'attachment; filename="latex_template.zip"'}
     return StreamingResponse(zip_buffer, media_type="application/zip", headers=headers)
 

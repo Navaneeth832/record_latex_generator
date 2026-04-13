@@ -2,25 +2,26 @@
 
 import { ChangeEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { TemplateForm, TemplateSummary } from "@/lib/types";
+import { ContentsAnalysisResponse, TemplateForm, TemplateSummary } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 const initialForm: TemplateForm = {
-  name: "",
-  lab_name: "",
-  course_code: "",
-  course_name: "",
-  department: "",
-  institution: "",
-  semester: "",
-  academic_year: "",
-  submitted_to: "",
-  submitted_by: "",
-  roll_number: "",
-  section: "",
+  name: "YOUR NAME",
+  lab_name: "COMPUTER NETWORKS LAB",
+  course_code: "CSL 332",
+  course_name: "COMPUTER NETWORKS LAB",
+  department: "COMPUTER SCIENCE AND ENGINEERING",
+  institution: "COLLEGE OF ENGINEERING TRIVANDRUM",
+  semester: "S6",
+  academic_year: "2025-2026",
+  submitted_to: "FACULTY IN CHARGE",
+  submitted_by: "YOUR NAME",
+  roll_number: "S23XXX",
+  section: "A",
   experiment_title: "",
   date: new Date().toLocaleDateString("en-GB"),
+  contents_cycles: [],
 };
 
 const logoMarks = {
@@ -34,6 +35,11 @@ export default function Home() {
   const [form, setForm] = useState<TemplateForm>(initialForm);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [analyzingContents, setAnalyzingContents] = useState(false);
+  const [contentsText, setContentsText] = useState("");
+  const [contentsFile, setContentsFile] = useState<File | null>(null);
+  const [contentsPreview, setContentsPreview] = useState("");
+  const [generatedFiles, setGeneratedFiles] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -65,6 +71,53 @@ export default function Home() {
   const resetMessages = () => {
     setError("");
     setSuccess("");
+  };
+
+  const analyzeContents = async () => {
+    if (!selectedTemplate || selectedTemplate.source !== "builtin") {
+      setError("Select a built-in template before analyzing the table of contents.");
+      return;
+    }
+
+    setAnalyzingContents(true);
+    resetMessages();
+
+    try {
+      let res: Response;
+
+      if (contentsFile) {
+        const formData = new FormData();
+        formData.append("file", contentsFile);
+        res = await fetch(`${API_BASE}/api/templates/${selectedTemplate.id}/analyze-contents-upload`, {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        if (!contentsText.trim()) {
+          throw new Error("Paste the table of contents text or upload a PDF before analyzing.");
+        }
+
+        res = await fetch(`${API_BASE}/api/templates/${selectedTemplate.id}/analyze-contents-text`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: contentsText.trim() }),
+        });
+      }
+
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+
+      const analysis: ContentsAnalysisResponse = await res.json();
+      setForm((prev) => ({ ...prev, contents_cycles: analysis.cycles }));
+      setContentsPreview(analysis.contents_tex);
+      setGeneratedFiles(analysis.generated_files);
+      setSuccess(`Contents analyzed successfully. ${analysis.generated_files.length} files will be generated in the ZIP.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to analyze the table of contents");
+    } finally {
+      setAnalyzingContents(false);
+    }
   };
 
   const downloadSelectedTemplate = async () => {
@@ -305,6 +358,67 @@ export default function Home() {
               />
               <input value={form.date} onChange={(e) => setField("date", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm md:col-span-2" placeholder="Date" />
             </div>
+
+            {selectedTemplate?.source === "builtin" && (
+              <div className="mt-8 space-y-4 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5">
+                <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900">Table of Contents Analyzer</h3>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Paste the contents table or upload a PDF. The app will generate the matching `contents.tex`, empty experiment files, and template-specific `main.tex` includes.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={analyzeContents}
+                    disabled={analyzingContents}
+                    className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    {analyzingContents ? "Analyzing..." : "Analyze Contents"}
+                  </button>
+                </div>
+
+                <textarea
+                  value={contentsText}
+                  onChange={(e) => setContentsText(e.target.value)}
+                  className="min-h-[180px] w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"
+                  placeholder="Paste the table of contents here if you are not uploading a PDF."
+                />
+
+                <input
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg,.webp"
+                  onChange={(e) => setContentsFile(e.target.files?.[0] ?? null)}
+                  className="block w-full rounded-xl border border-slate-300 bg-white p-3 text-sm"
+                />
+
+                {form.contents_cycles.length > 0 && (
+                  <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="text-sm font-semibold text-slate-900">Detected Structure</p>
+                      <div className="mt-3 space-y-3 text-sm text-slate-700">
+                        {form.contents_cycles.map((cycle) => (
+                          <div key={cycle.cycle_number}>
+                            <p className="font-semibold">{`Cycle ${cycle.cycle_number}: ${cycle.title}`}</p>
+                            <p className="mt-1 text-slate-500">{`${cycle.entries.length} experiment(s)`}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="text-sm font-semibold text-slate-900">Generated Files</p>
+                      <p className="mt-1 text-sm text-slate-500">{generatedFiles.join(", ")}</p>
+                      <textarea
+                        readOnly
+                        value={contentsPreview}
+                        className="mt-4 min-h-[220px] w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 font-mono text-xs text-slate-700"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <aside className="rounded-[1.75rem] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff_0%,_#f8fafc_100%)] p-6 shadow-sm">

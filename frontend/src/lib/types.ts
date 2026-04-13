@@ -34,6 +34,7 @@ export type TemplateForm = {
   section: string;
   experiment_title: string;
   date: string;
+  contents_cycles: TemplateCycle[];
 };
 
 export type TemplateSummary = {
@@ -44,4 +45,21 @@ export type TemplateSummary = {
   is_customizable: boolean;
   preview_url: string | null;
   download_filename: string;
+};
+
+export type TemplateEntry = {
+  serial_number: number;
+  title: string;
+};
+
+export type TemplateCycle = {
+  cycle_number: number;
+  title: string;
+  entries: TemplateEntry[];
+};
+
+export type ContentsAnalysisResponse = {
+  cycles: TemplateCycle[];
+  contents_tex: string;
+  generated_files: string[];
 };
