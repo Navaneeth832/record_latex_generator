@@ -18,3 +18,30 @@ export type ExperimentData = {
   programs: ProgramData[];
   result: string;
 };
+
+export type TemplateForm = {
+  name: string;
+  lab_name: string;
+  course_code: string;
+  course_name: string;
+  department: string;
+  institution: string;
+  semester: string;
+  academic_year: string;
+  submitted_to: string;
+  submitted_by: string;
+  roll_number: string;
+  section: string;
+  experiment_title: string;
+  date: string;
+};
+
+export type TemplateSummary = {
+  id: string;
+  name: string;
+  description: string;
+  source: "builtin" | "uploaded";
+  is_customizable: boolean;
+  preview_url: string | null;
+  download_filename: string;
+};

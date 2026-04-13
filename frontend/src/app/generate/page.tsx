@@ -5,6 +5,7 @@ import Link from "next/link";
 import MonacoField from "@/components/MonacoField";
 import { ExperimentData } from "@/lib/types";
 import { parseProgramsFromText } from "@/lib/parsePrograms";
+import { useCopyToClipboard } from "@/lib/useCopyToClipboard";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
@@ -48,6 +49,7 @@ function StepIndicator({ step }: { step: Step }) {
 }
 
 export default function Home() {
+  const { copy } = useCopyToClipboard();
   const [mode, setMode] = useState<InputMode>("upload");
   const [step, setStep] = useState<Step>(1);
   const [data, setData] = useState<ExperimentData>(emptyExperiment);
@@ -163,9 +165,16 @@ export default function Home() {
     }
   };
 
-  const copyLatex = async () => {
-    await navigator.clipboard.writeText(latex);
-    setSuccess("LaTeX copied to clipboard.");
+  const handleCopyLatexClick = async () => {
+    resetMessages();
+
+    const result = await copy(latex);
+    if (result.ok) {
+      setSuccess("LaTeX copied to clipboard.");
+      return;
+    }
+
+    setError(result.error ?? "Failed to copy LaTeX.");
   };
 
   const downloadLatex = () => {
@@ -184,7 +193,7 @@ export default function Home() {
       <div className="mx-auto max-w-6xl space-y-6">
         <header className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <div className="flex items-center justify-between gap-3">
-            <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">AI LaTeX Lab Generator</h1>
+            <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">Lab Record Studio</h1>
             <Link href="/" className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700">
               Back Home
             </Link>
@@ -438,7 +447,7 @@ export default function Home() {
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={copyLatex}
+                  onClick={handleCopyLatexClick}
                   className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium"
                 >
                   Copy
