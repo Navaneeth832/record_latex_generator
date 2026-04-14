@@ -745,9 +745,9 @@ def build_template_assets(template_id: str, cycles: List[TemplateCycle], base_fi
 
 BUILTIN_TEMPLATES = {
     "template-1": {
-        "name": "Template 1 - Classic Record",
-        "description": "The original bundled lab-record design already present in the backend.",
-        "download_filename": "template-1-classic-record.zip",
+        "name": "Navaneeth - Lab Record",
+        "description": "Well-designed lab record with output boxes.",
+        "download_filename": "Navaneeth-modern-record.zip",
         "files": {
             "main.tex": read_template_file("template-1", "main.tex"),
             "cover_page.tex": read_template_file("template-1", "cover_page.tex"),
@@ -756,9 +756,9 @@ BUILTIN_TEMPLATES = {
         },
     },
     "template-2": {
-        "name": "Template 2 - Modern Record",
-        "description": "A second built-in record template with a cleaner cover page, circular logo section, and updated table styling.",
-        "download_filename": "template-2-modern-record.zip",
+        "name": "Harikrishnan - Lab Record",
+        "description": "Cleaner lab record template with organised Contents and experiments.",
+        "download_filename": "Harikrishnan-classic-record.zip",
         "files": {
             "main.tex": read_template_file("template-2", "main.tex"),
             "cover_page.tex": read_template_file("template-2", "cover_page.tex"),
@@ -880,34 +880,17 @@ def render_preview_pdf(title: str, subtitle: str, accent: Tuple[float, float, fl
 
 
 def build_builtin_preview_pdf(template_id: str):
-    logo_path = BASE_DIR / "figures" / "cet_logo.jpeg"
-    logo_stream = logo_path.read_bytes() if logo_path.exists() else None
     if template_id == "template-1":
-        return render_preview_pdf(
-            title="Template 1 - Classic Record",
-            subtitle="Admin-curated preview for the original bundled record format.",
-            accent=(0.08, 0.25, 0.55),
-            details=[
-                "Traditional lab record cover page with institution heading.",
-                "Default follow page and experiment index layout.",
-                "Uses the current LaTeX structure already present in the backend.",
-                "Best when you want continuity with the existing project format.",
-            ],
-            logo_stream=logo_stream,
-        )
-
-    return render_preview_pdf(
-        title="Template 2 - Modern Record",
-        subtitle="Admin-curated preview for the alternate built-in template.",
-        accent=(0.06, 0.45, 0.56),
-        details=[
-            "Cleaner cover layout with stronger spacing and boxed student details.",
-            "Circular logo treatment integrated into the title and certificate pages.",
-            "Updated index styling for a more polished record-book look.",
-            "Uses a separate built-in LaTeX file set when selected.",
-        ],
-        logo_stream=logo_stream,
-    )
+        preview_path = BASE_DIR / "builtin_templates" / "Navaneeth_modern_record.pdf"
+    elif template_id == "template-2":
+        preview_path = BASE_DIR / "builtin_templates" / "Harikrishnan_classic_record.pdf"
+    else:
+        raise HTTPException(404, "Template not found")
+    
+    if not preview_path.exists():
+        raise HTTPException(404, f"Preview PDF not found for {template_id}")
+    
+    return preview_path.read_bytes()
 
 
 def get_builtin_template_files(template_id: str):

@@ -1,38 +1,96 @@
 # Lab Record Studio
 
-A full-stack web app that converts lab content into structured LaTeX, with AI-assisted extraction, manual review, and export-ready output.
-It also provides a built-in template library plus downloadable LaTeX template ZIP packages for complete record preparation.
+A full-stack app for building lab-record LaTeX from source material. It combines AI-assisted experiment generation, a manual review step, built-in record templates, and downloadable ZIP packages that can be uploaded directly to Overleaf or used with a local LaTeX toolchain.
 
 ## Features
 
-- AI-assisted experiment generation from uploaded files or pasted code text.
-- Human-in-the-loop editor to review and correct experiment details before export.
-- Final LaTeX export (`.tex`) for direct use in Overleaf or local LaTeX tools.
-- Built-in template library with admin-controlled preview PDFs.
-- Template ZIP generator with `main.tex`, `cover_page.tex`, `follow_page.tex`, and `contents.tex`.
-- Manual ZIP template upload for one-off template downloads.
+- Generate experiment data from an uploaded file, pasted code blocks, or a plain-language prompt.
+- Review and edit experiment heading, aim, algorithms, programs, outputs, and result before export.
+- Export the final experiment as `experiment.tex`.
+- Browse built-in template packages with generated PDF previews.
+- Upload custom ZIP templates for direct download later.
+- Analyze a lab-record table of contents and generate template-aware `contents.tex` plus placeholder experiment files.
+- Support two built-in LaTeX styles with different experiment rendering rules.
 
 ## Project Structure
 
 ```text
 record_latex_generator/
-|- backend/    # FastAPI service + LLM integration + LaTeX generation
-|- frontend/   # Next.js UI (generator + template workspace)
+|- backend/
+|  |- app/
+|  |  |- builtin_templates/
+|  |  |  |- template-1/
+|  |  |  `- template-2/
+|  |  |- figures/
+|  |  `- main.py
+|  `- requirements.txt
+|- frontend/
+|  |- src/
+|  |  |- app/
+|  |  |  |- generate/
+|  |  |  |- template/
+|  |  |  |- globals.css
+|  |  |  |- layout.tsx
+|  |  |  `- page.tsx
+|  |  |- components/
+|  |  |  `- MonacoField.tsx
+|  |  `- lib/
+|  |     |- parsePrograms.ts
+|  |     |- types.ts
+|  |     `- useCopyToClipboard.ts
+|  |- package.json
+|  |- tailwind.config.ts
+|  `- tsconfig.json
+|- .env
 `- README.md
 ```
+
+## Architecture
+
+### Backend
+
+- Framework: FastAPI
+- Main entrypoint: `backend/app/main.py`
+- Responsibilities:
+  - Extract text from uploaded `.pdf`, `.txt`, `.zip`, and `.bin` files
+  - Call the configured LLM provider
+  - Convert parsed content into experiment JSON
+  - Generate final LaTeX for the selected template
+  - Build downloadable template ZIP files
+  - Generate built-in preview PDFs
+  - Analyze contents pages and create template-specific placeholder files
+
+### Frontend
+
+- Framework: Next.js 14 with the App Router
+- Main routes:
+  - `/`: template workspace
+  - `/generate`: experiment generation and LaTeX export flow
+  - `/template`: redirects to `/`
+- Responsibilities:
+  - Template selection and preview
+  - Template form editing
+  - Template ZIP upload and download
+  - Contents analyzer UI for built-in templates
+  - Experiment generation, review, and final LaTeX export
 
 ## Prerequisites
 
 - Python 3.10+
 - Node.js 18+
 - npm 9+
-- A valid LLM API key:
-  - `GROQ_API_KEY` (default provider), or
-  - `GEMINI_API_KEY` (if using Gemini)
+- One LLM API key:
+  - `GROQ_API_KEY` for Groq, or
+  - `GEMINI_API_KEY` for Gemini
 
-## 1) Backend Setup (FastAPI)
+Optional environment variables:
 
-From project root:
+- `LLM_PROVIDER=groq` or `LLM_PROVIDER=gemini`
+- `NEXT_PUBLIC_API_BASE=http://localhost:8000` if the frontend should call a non-default backend URL
+
+## Backend Setup
+
+From the project root:
 
 ### Windows PowerShell
 
@@ -41,8 +99,8 @@ cd backend
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-$env:LLM_PROVIDER="groq"          # optional, defaults to groq
-$env:GROQ_API_KEY="your_api_key"  # required for groq
+$env:LLM_PROVIDER="groq"
+$env:GROQ_API_KEY="your_api_key"
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -58,133 +116,147 @@ export GROQ_API_KEY=your_api_key
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-If you want Gemini instead:
+To switch providers:
 
 - Set `LLM_PROVIDER=gemini`
 - Set `GEMINI_API_KEY=your_api_key`
 
-## 2) Frontend Setup (Next.js)
+## Frontend Setup
 
-Open a second terminal from project root:
+Open a second terminal from the project root:
 
 ```bash
 cd frontend
 npm install
+npm run dev
 ```
 
-If backend runs on a different URL, set:
+If the backend is not running on `http://localhost:8000`, set:
 
 ```bash
 NEXT_PUBLIC_API_BASE=http://localhost:8000
 ```
 
-Then start frontend:
+The frontend runs at `http://localhost:3000`.
 
-```bash
-npm run dev
-```
+## API Endpoints
 
-Open: `http://localhost:3000`
-
-## Backend API Endpoints
+### Experiment Generation
 
 - `POST /api/upload-process`
 - `POST /api/process-text`
+- `POST /api/process-question`
 - `POST /api/generate-latex`
-- `POST /api/download-template`
+
+### Template Library
+
 - `GET /api/templates`
 - `GET /api/templates/{template_id}/preview`
 - `POST /api/templates/{template_id}/download`
 - `POST /api/templates/upload`
+- `POST /api/download-template`
 
-## User Manual
+### Contents Analysis
 
-### Step 1) Choose a Record Template and Download ZIP
+- `POST /api/templates/{template_id}/analyze-contents-text`
+- `POST /api/templates/{template_id}/analyze-contents-upload`
 
-1. From the home page, select one of the built-in templates.
-2. Review its preview PDF.
-3. Fill the form with your record details.
-4. Click **Download Selected Template**.
-5. Extract the ZIP and review files such as `main.tex`, `cover_page.tex`, `follow_page.tex`, and `contents.tex`.
-6. Upload the project to Overleaf or use it locally as the base record template.
+## User Flows
 
-### Step 1B) Manual Template Upload
+### 1. Download a Record Template ZIP
 
-1. Use the `+ Add Template ZIP` action on the home page.
-2. Upload a ZIP file.
-3. Select that uploaded template and download it when needed.
-4. Uploaded templates are downloaded as-is and do not use the built-in preview system.
+1. Open the home page.
+2. Select a built-in template or upload a custom ZIP template.
+3. For built-in templates, review the generated preview PDF.
+4. Fill in the record details form.
+5. Click `Download Selected Template`.
+6. Extract the ZIP and open it in Overleaf or your local LaTeX editor.
 
-### Step 2) Generate Individual Experiment LaTeX
+Built-in templates are rendered with the form values before download. Uploaded ZIP templates are returned as-is.
 
-1. From the home page, choose **Generate Experiment LaTeX**.
-2. Select an input mode:
-   - **Upload File**: upload `.pdf`, `.txt`, `.zip`, or `.bin`
-   - **Paste Code**: paste text in this format:
-     ```text
-     ### Program 1 Title
-     <code...>
+### 2. Analyze a Contents Page
 
-     ### Program 2 Title
-     <code...>
-     ```
-   - **Ask AI**: describe the C program you want generated
-3. Click **Generate Experiment**.
-4. In **Step 2 - Review & Correct**, update the experiment details, aim, algorithms, programs, output, and result.
-5. Click **Generate Final LaTeX**.
-6. Use **Copy** or **Download .tex**.
-7. Upload the generated `.tex` into the record template project and compile it in Overleaf or your local LaTeX editor.
+This flow is available only for built-in templates.
 
-## Overleaf Helper Guide
+1. Select a built-in template on the home page.
+2. Paste the lab-record contents text or upload a contents PDF.
+3. Click `Analyze Contents`.
+4. Review the detected cycles and experiment counts.
+5. Download the template ZIP.
 
-### 1) Using Template ZIP
+The backend will generate:
 
-1. In Overleaf, choose **New Project -> Upload Project**.
-2. Upload the generated ZIP directly.
-3. Open `main.tex` and confirm the included files are present.
-4. Replace or add experiment files as needed.
+- a template-specific `contents.tex`
+- placeholder experiment files
+- an updated `main.tex` that includes those generated files
+
+### 3. Generate Experiment LaTeX
+
+1. Open `/generate`.
+2. Choose one input mode:
+   - `Upload File`: upload `.pdf`, `.txt`, `.zip`, or `.bin`
+   - `Paste Code`: paste code blocks using `### Title` headings
+   - `Ask AI`: describe the C program you want
+3. Click `Generate Experiment`.
+4. Review and edit the generated experiment details.
+5. Click `Generate Final LaTeX`.
+6. Copy the LaTeX or download `experiment.tex`.
+
+## Paste Code Format
+
+Use this format on the generator page:
+
+```text
+### Program 1 Title
+<code here>
+
+### Program 2 Title
+<code here>
+```
+
+## Template Behavior
+
+The selected template is stored in browser `localStorage` and reused when generating experiment LaTeX on `/generate`.
+
+### Template 1
+
+- Uses the default experiment format
+- Renders algorithms, program listings, and outputs using the classic layout
+- Generates placeholder files like `Expt{cycle}_{index}_1.tex` during contents analysis
+
+### Template 2
+
+- Uses the `labexperiment` environment
+- Embeds programs and outputs in the alternate layout
+- Generates placeholder files like `CYCLE{cycle}.tex` during contents analysis
+
+## Overleaf Usage
+
+### Upload the ZIP Template
+
+1. In Overleaf, choose `New Project -> Upload Project`.
+2. Upload the generated ZIP.
+3. Open `main.tex`.
+4. Add or replace experiment files as needed.
 5. Compile and download the final PDF.
 
-### 2) Using Generated `experiment.tex`
+### Add `experiment.tex` to an Existing Record Project
 
-1. Open the record template project in Overleaf.
-2. Upload `experiment.tex` or a renamed experiment file.
-3. Add an `\include{...}` entry in `main.tex`.
+1. Open your template project in Overleaf.
+2. Upload `experiment.tex` or rename it as needed.
+3. Add an `\include{...}` or `\input{...}` entry in `main.tex`, depending on your template structure.
 4. Compile with `pdfLaTeX`.
-5. Fix any missing package issues by adding `\usepackage{...}` lines to the main file if needed.
 
-## Troubleshooting
+## Add More Built-In Templates
 
-- `Missing GROQ_API_KEY` or `Missing GEMINI_API_KEY`:
-  Set the correct environment variable before running the backend.
-- Frontend cannot reach backend:
-  Verify the backend is running on port `8000` and set `NEXT_PUBLIC_API_BASE` correctly.
-- Empty or weak AI output:
-  Improve input quality and review the generated content in Step 2 before exporting the final LaTeX.
+Built-in templates live in `backend/app/builtin_templates/` and are registered in `backend/app/main.py`.
 
-## Experiment Generation with Template Support
-
-When generating individual experiments on the `/generate` page, the system now respects the template selection made on the home page:
-
-- **Template 1 (Classic Record)**: Generates experiment LaTeX using the original format with inline code display and program file inclusions.
-- **Template 2 (Modern Record)**: Generates experiment LaTeX using the `\begin{labexperiment}` environment with inline code embedding (no external file inclusions). Programs and their outputs are embedded directly in the LaTeX, suitable for the modern template's lab-record design.
-
-The selected template ID is stored in browser localStorage and automatically applied when generating experiments.
-
-## Admin: Add More Built-In Templates
-
-Built-in templates are stored under `backend/app/builtin_templates/` and registered in `backend/app/main.py`.
-
-1. Add a new LaTeX file set.
-   Create a new folder such as `backend/app/builtin_templates/template-3/` and add:
-   `main.tex`, `cover_page.tex`, `follow_page.tex`, and `contents.tex`.
-2. Register the template inside `BUILTIN_TEMPLATES`.
-   Give it a new ID such as `"template-3"` plus `name`, `description`, `download_filename`, and a `files` map loaded with `read_template_file(...)`.
-3. Add its preview design in `build_builtin_preview_pdf(template_id)`.
-   That returned PDF is the exact built-in preview users will see on the home page.
-4. (Optional) Add experiment-format support in `build_latex()`.
-   If your template-3 has a special experiment environment or formatting, add custom builders similar to `build_programs_template2()`, `build_algorithms_template2()`, and `build_outputs_template2()`, then branch in `build_latex()` for `template_id == "template-3"`.
-5. Restart the backend.
+1. Create a new folder such as `backend/app/builtin_templates/template-3/`.
+2. Add `main.tex`, `cover_page.tex`, `follow_page.tex`, and `contents.tex`.
+3. Register the template in `BUILTIN_TEMPLATES`.
+4. Add a preview implementation in `build_builtin_preview_pdf(template_id)`.
+5. If the template requires a different experiment layout, add a custom branch in `build_latex()` and any helper builders it needs.
+6. Restart the backend.
 
 Example:
 
@@ -201,3 +273,16 @@ BUILTIN_TEMPLATES["template-3"] = {
     },
 }
 ```
+
+## Troubleshooting
+
+- `Missing GROQ_API_KEY` or `Missing GEMINI_API_KEY`
+  Set the correct environment variable before starting the backend.
+- Frontend cannot reach the backend
+  Verify the backend is running on port `8000` and set `NEXT_PUBLIC_API_BASE` if needed.
+- No programs detected from pasted or uploaded content
+  Make sure pasted code uses `### Title` headings, or that the uploaded file contains extractable text.
+- Contents analysis fails for uploaded images
+  Image OCR is not implemented in the current backend. Paste text directly or upload a PDF instead.
+- Generated AI output is weak or incomplete
+  Improve the input prompt or source material, then correct the result in the review step before exporting LaTeX.
