@@ -68,6 +68,7 @@ class ExperimentData(BaseModel):
     algorithms: List[AlgorithmData]
     programs: List[ProgramData]
     result: str
+    template_id: str = "template-1"
 
 
 class TextProcessRequest(BaseModel):
@@ -185,6 +186,53 @@ __OUTPUTS__
 \large
 \section*{\underline{RESULT}}
 __RESULT__
+"""
+
+# =========================================================
+# LATEX TEMPLATE 2 (FOR LABEXPERIMENT ENVIRONMENT)
+# =========================================================
+LATEX_TEMPLATE_2 = r"""
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Experiment __NO__}
+\fancyhead[R]{Page \thepage}
+
+\lstset{
+language=C,
+basicstyle=\ttfamily\footnotesize,
+frame=single,
+numbers=left,
+numberstyle=\tiny,
+breaklines=true,
+style=cstyle
+}
+
+\tcbset{
+myoutputbox/.style={
+colback=black,
+colframe=gray!75!black,
+coltext=white,
+fontupper=\ttfamily\small
+}
+}
+
+\begin{labexperiment}%
+    {__HEADING__}%
+    {__DATE__}%
+    {__AIM__}
+    \label{exp:__NO__}
+
+    \subsubsection*{\textbf{Algorithm}}
+__ALGORITHMS__
+
+__PROGRAMS__
+
+__OUTPUTS__
+
+    \subsubsection*{\textbf{Result}}
+    __RESULT__
+
+\end{labexperiment}
 """
 
 # =========================================================
@@ -964,8 +1012,94 @@ s23a48@administrator-rusa:Ëœ/s6$ ./a.out
     return "\n".join(out)
 
 
+def build_programs_template2(programs):
+    """Build programs with inline code for template-2."""
+    blocks = []
+    
+    for i, p in enumerate(programs, 1):
+        title_escaped = latex_escape(p.title)
+        code_escaped = p.code
+        
+        blocks.append(
+            f"      % -------- Program {i} --------\n"
+            f"      \\subsection{{{title_escaped}}}\n\n"
+            f"      \\subsubsection*{{\\textbf{{Program}}}}\n"
+            f"      \\begin{{lstlisting}}[style=cstyle]\n"
+            f"{code_escaped}\n"
+            f"      \\end{{lstlisting}}\n"
+        )
+    
+    return "\n".join(blocks)
+
+
+def build_algorithms_template2(algorithms):
+    """Build algorithms for template-2."""
+    blocks = []
+    
+    for algo in algorithms:
+        steps = "\n".join(
+            f"        \\item {latex_escape(clean_step(s))}"
+            for s in algo.steps
+        )
+        
+        blocks.append(
+            f"    \\textbf{{{latex_escape(algo.name)}}}:\n"
+            f"    \\begin{{enumerate}}\n"
+            f"{steps}\n"
+            f"    \\end{{enumerate}}\n"
+        )
+    
+    return "\n".join(blocks)
+
+
+def build_outputs_template2(programs):
+    """Build outputs for template-2 using termout environment."""
+    blocks = []
+    
+    for i, p in enumerate(programs, 1):
+        output_escaped = p.output
+        title_escaped = latex_escape(p.title) if p.title else f"Program {i}"
+        
+        blocks.append(
+            f"      \\vspace{{1cm}} \\subsubsection*{{\\textbf{{Output -- {title_escaped}}}}}\n"
+            f"      \\begin{{termout}}\n"
+            f"          \\begin{{lstlisting}}[style=plaintext]\n"
+            f"{output_escaped}\n"
+            f"          \\end{{lstlisting}}\n"
+            f"      \\end{{termout}}\n"
+        )
+    
+    return "\n".join(blocks)
+
+
 def build_latex(exp: ExperimentData):
 
+    if exp.template_id == "template-2":
+        latex = LATEX_TEMPLATE_2
+        latex = latex.replace("__NO__", exp.experiment_number)
+        latex = latex.replace("__HEADING__", latex_escape(exp.experiment_heading))
+        latex = latex.replace("__DATE__", latex_escape(exp.date))
+        latex = latex.replace("__AIM__", latex_escape(exp.aim))
+        latex = latex.replace("__RESULT__", latex_escape(exp.result))
+        
+        latex = latex.replace(
+            "__ALGORITHMS__",
+            build_algorithms_template2(exp.algorithms)
+        )
+        
+        latex = latex.replace(
+            "__PROGRAMS__",
+            build_programs_template2(exp.programs)
+        )
+        
+        latex = latex.replace(
+            "__OUTPUTS__",
+            build_outputs_template2(exp.programs)
+        )
+        
+        return latex
+    
+    # Template 1 (default)
     latex = LATEX_TEMPLATE
     latex=latex.replace("<nombor>", exp.experiment_number[0])
     latex = latex.replace("__NO__", exp.experiment_number)

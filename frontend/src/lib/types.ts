@@ -17,6 +17,7 @@ export type ExperimentData = {
   algorithms: AlgorithmData[];
   programs: ProgramData[];
   result: string;
+  template_id?: string;
 };
 
 export type TemplateForm = {

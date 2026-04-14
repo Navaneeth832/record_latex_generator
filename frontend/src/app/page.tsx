@@ -64,6 +64,12 @@ export default function Home() {
 
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId) ?? null;
 
+  useEffect(() => {
+    if (selectedTemplateId) {
+      localStorage.setItem("selectedTemplateId", selectedTemplateId);
+    }
+  }, [selectedTemplateId]);
+
   const setField = (key: keyof TemplateForm, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };

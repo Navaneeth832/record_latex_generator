@@ -162,6 +162,15 @@ Open: `http://localhost:3000`
 - Empty or weak AI output:
   Improve input quality and review the generated content in Step 2 before exporting the final LaTeX.
 
+## Experiment Generation with Template Support
+
+When generating individual experiments on the `/generate` page, the system now respects the template selection made on the home page:
+
+- **Template 1 (Classic Record)**: Generates experiment LaTeX using the original format with inline code display and program file inclusions.
+- **Template 2 (Modern Record)**: Generates experiment LaTeX using the `\begin{labexperiment}` environment with inline code embedding (no external file inclusions). Programs and their outputs are embedded directly in the LaTeX, suitable for the modern template's lab-record design.
+
+The selected template ID is stored in browser localStorage and automatically applied when generating experiments.
+
 ## Admin: Add More Built-In Templates
 
 Built-in templates are stored under `backend/app/builtin_templates/` and registered in `backend/app/main.py`.
@@ -173,7 +182,9 @@ Built-in templates are stored under `backend/app/builtin_templates/` and registe
    Give it a new ID such as `"template-3"` plus `name`, `description`, `download_filename`, and a `files` map loaded with `read_template_file(...)`.
 3. Add its preview design in `build_builtin_preview_pdf(template_id)`.
    That returned PDF is the exact built-in preview users will see on the home page.
-4. Restart the backend.
+4. (Optional) Add experiment-format support in `build_latex()`.
+   If your template-3 has a special experiment environment or formatting, add custom builders similar to `build_programs_template2()`, `build_algorithms_template2()`, and `build_outputs_template2()`, then branch in `build_latex()` for `template_id == "template-3"`.
+5. Restart the backend.
 
 Example:
 

@@ -60,6 +60,12 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("selectedTemplateId") || "template-1";
+    }
+    return "template-1";
+  });
 
   const parsedPrograms = useMemo(() => parseProgramsFromText(pastedText), [pastedText]);
 
@@ -144,10 +150,15 @@ export default function Home() {
     resetMessages();
 
     try {
+      const dataToSend = {
+        ...data,
+        template_id: selectedTemplateId || "template-1",
+      };
+      
       const res = await fetch(`${API_BASE}/api/generate-latex`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(dataToSend),
       });
 
       if (!res.ok) {
