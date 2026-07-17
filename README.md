@@ -92,15 +92,15 @@ Optional environment variables:
 
 From the project root:
 
-### Windows PowerShell
+### Windows cmd
 
-```powershell
+```cmd
 cd backend
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-$env:LLM_PROVIDER="groq"
-$env:GROQ_API_KEY="your_api_key"
+set LLM_PROVIDER=groq
+set GROQ_API_KEY=your_api_key
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
