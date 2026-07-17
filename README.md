@@ -1,6 +1,7 @@
 # Lab Record Studio
 
 A full-stack app for building lab-record LaTeX from source material. It combines AI-assisted experiment generation, a manual review step, built-in record templates, and downloadable ZIP packages that can be uploaded directly to Overleaf or used with a local LaTeX toolchain.
+  - Deployment link: [https://record-latex-generator.onrender.com/](https://record-latex-generator.onrender.com/)
 
 ## Features
 
