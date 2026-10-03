@@ -1262,3 +1262,8 @@ async def download_template(payload: TemplateRequest):
     headers = {"Content-Disposition": 'attachment; filename="latex_template.zip"'}
     return StreamingResponse(zip_buffer, media_type="application/zip", headers=headers)
 
+@app.get("/health")
+def health():
+    return {status:"healthy"}
+    
+
