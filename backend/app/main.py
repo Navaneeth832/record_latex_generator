@@ -1264,6 +1264,6 @@ async def download_template(payload: TemplateRequest):
 
 @app.get("/health")
 def health():
-    return {status:"healthy"}
+    return {"status":"healthy"}
     
 
