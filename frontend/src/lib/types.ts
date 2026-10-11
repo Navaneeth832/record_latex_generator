@@ -2,6 +2,7 @@ export type ProgramData = {
   title: string;
   code: string;
   output: string;
+  commands?: string;
 };
 
 export type AlgorithmData = {
@@ -18,6 +19,8 @@ export type ExperimentData = {
   programs: ProgramData[];
   result: string;
   template_id?: string;
+  roll_number?: string;
+  semester?: string;
 };
 
 export type TemplateForm = {

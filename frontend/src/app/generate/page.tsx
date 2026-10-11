@@ -20,6 +20,8 @@ const emptyExperiment: ExperimentData = {
   algorithms: [],
   programs: [],
   result: "",
+  roll_number: "s23a48",
+  semester: "S7",
 };
 
 function StepIndicator({ step }: { step: Step }) {
@@ -60,12 +62,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("selectedTemplateId") || "template-1";
-    }
-    return "template-1";
-  });
+  const selectedTemplateId = "template-1";
 
   const parsedPrograms = useMemo(() => parseProgramsFromText(pastedText), [pastedText]);
 
@@ -341,6 +338,26 @@ export default function Home() {
                     placeholder="Date"
                   />
                   <input
+                    value={data.roll_number ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setData({ ...data, roll_number: val });
+                      if (typeof window !== "undefined") localStorage.setItem("roll_number", val);
+                    }}
+                    className="rounded-lg border border-slate-300 p-2"
+                    placeholder="KTU ID (e.g. TVE23CS099)"
+                  />
+                  <input
+                    value={data.semester ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setData({ ...data, semester: val });
+                      if (typeof window !== "undefined") localStorage.setItem("semester", val);
+                    }}
+                    className="rounded-lg border border-slate-300 p-2"
+                    placeholder="Semester (e.g. S7)"
+                  />
+                  <input
                     value={data.experiment_heading}
                     onChange={(e) => setData({ ...data, experiment_heading: e.target.value })}
                     className="rounded-lg border border-slate-300 p-2 md:col-span-2"
@@ -421,6 +438,17 @@ export default function Home() {
                           setData({ ...data, programs: next });
                         }}
                         minHeight="220px"
+                      />
+                      <MonacoField
+                        label="Compile & Execution Commands (AI-generated, editable)"
+                        language="bash"
+                        value={program.commands ?? ""}
+                        onChange={(value) => {
+                          const next = [...data.programs];
+                          next[index] = { ...program, commands: value };
+                          setData({ ...data, programs: next });
+                        }}
+                        minHeight="90px"
                       />
                       <MonacoField
                         label="Execution Output"

@@ -8,10 +8,9 @@ A full-stack app for building lab-record LaTeX from source material. It combines
 - Generate experiment data from an uploaded file, pasted code blocks, or a plain-language prompt.
 - Review and edit experiment heading, aim, algorithms, programs, outputs, and result before export.
 - Export the final experiment as `experiment.tex`.
-- Browse built-in template packages with generated PDF previews.
-- Upload custom ZIP templates for direct download later.
+- Preview the official Navaneeth record template with live PDF preview.
 - Analyze a lab-record table of contents and generate template-aware `contents.tex` plus placeholder experiment files.
-- Support two built-in LaTeX styles with different experiment rendering rules.
+- Download complete ready-to-compile LaTeX ZIP packages.
 
 ## Project Structure
 
@@ -20,8 +19,7 @@ record_latex_generator/
 |- backend/
 |  |- app/
 |  |  |- builtin_templates/
-|  |  |  |- template-1/
-|  |  |  `- template-2/
+|  |  |  `- template-1/
 |  |  |- figures/
 |  |  `- main.py
 |  `- requirements.txt
@@ -215,65 +213,13 @@ Use this format on the generator page:
 <code here>
 ```
 
-## Template Behavior
+## Template Format
 
-The selected template is stored in browser `localStorage` and reused when generating experiment LaTeX on `/generate`.
+### Navaneeth Lab Record Template
 
-### Template 1
-
-- Uses the default experiment format
-- Renders algorithms, program listings, and outputs using the classic layout
-- Generates placeholder files like `Expt{cycle}_{index}_1.tex` during contents analysis
-
-### Template 2
-
-- Uses the `labexperiment` environment
-- Embeds programs and outputs in the alternate layout
-- Generates placeholder files like `CYCLE{cycle}.tex` during contents analysis
-
-## Overleaf Usage
-
-### Upload the ZIP Template
-
-1. In Overleaf, choose `New Project -> Upload Project`.
-2. Upload the generated ZIP.
-3. Open `main.tex`.
-4. Add or replace experiment files as needed.
-5. Compile and download the final PDF.
-
-### Add `experiment.tex` to an Existing Record Project
-
-1. Open your template project in Overleaf.
-2. Upload `experiment.tex` or rename it as needed.
-3. Add an `\include{...}` or `\input{...}` entry in `main.tex`, depending on your template structure.
-4. Compile with `pdfLaTeX`.
-
-## Add More Built-In Templates
-
-Built-in templates live in `backend/app/builtin_templates/` and are registered in `backend/app/main.py`.
-
-1. Create a new folder such as `backend/app/builtin_templates/template-3/`.
-2. Add `main.tex`, `cover_page.tex`, `follow_page.tex`, and `contents.tex`.
-3. Register the template in `BUILTIN_TEMPLATES`.
-4. Add a preview implementation in `build_builtin_preview_pdf(template_id)`.
-5. If the template requires a different experiment layout, add a custom branch in `build_latex()` and any helper builders it needs.
-6. Restart the backend.
-
-Example:
-
-```python
-BUILTIN_TEMPLATES["template-3"] = {
-    "name": "Template 3 - Minimal Record",
-    "description": "Short description shown on the home page.",
-    "download_filename": "template-3-minimal-record.zip",
-    "files": {
-        "main.tex": read_template_file("template-3", "main.tex"),
-        "cover_page.tex": read_template_file("template-3", "cover_page.tex"),
-        "follow_page.tex": read_template_file("template-3", "follow_page.tex"),
-        "contents.tex": read_template_file("template-3", "contents.tex"),
-    },
-}
-```
+- Uses structured output boxes and standard lab record formatting
+- Renders algorithms, program listings, and terminal outputs cleanly
+- Generates placeholder files like `Expt{cycle}_{index}_1.tex` during table of contents analysis
 
 ## Troubleshooting
 

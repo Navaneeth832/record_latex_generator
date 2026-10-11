@@ -1,40 +1,33 @@
 "use client";
 
-import { ChangeEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ContentsAnalysisResponse, TemplateForm, TemplateSummary } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 const initialForm: TemplateForm = {
-  name: "YOUR NAME",
-  lab_name: "COMPUTER NETWORKS LAB",
-  course_code: "CSL 332",
-  course_name: "COMPUTER NETWORKS LAB",
+  name: "",
+  lab_name: "",
+  course_code: "",
+  course_name: "",
   department: "COMPUTER SCIENCE AND ENGINEERING",
   institution: "COLLEGE OF ENGINEERING TRIVANDRUM",
-  semester: "S6",
-  academic_year: "2025-2026",
-  submitted_to: "FACULTY IN CHARGE",
-  submitted_by: "YOUR NAME",
-  roll_number: "S23XXX",
-  section: "A",
+  semester: "S7",
+  academic_year: "",
+  submitted_to: "",
+  submitted_by: "",
+  roll_number: "TVE23CS099",
+  section: "",
   experiment_title: "",
   date: new Date().toLocaleDateString("en-GB"),
   contents_cycles: [],
 };
 
-const logoMarks = {
-  builtin: "LR",
-  uploaded: "ZIP",
-} as const;
-
 export default function Home() {
-  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [template, setTemplate] = useState<TemplateSummary | null>(null);
   const [form, setForm] = useState<TemplateForm>(initialForm);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [analyzingContents, setAnalyzingContents] = useState(false);
   const [contentsText, setContentsText] = useState("");
   const [contentsFile, setContentsFile] = useState<File | null>(null);
@@ -44,7 +37,7 @@ export default function Home() {
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
-    const loadTemplates = async () => {
+    const loadTemplate = async () => {
       try {
         const res = await fetch(`${API_BASE}/api/templates`);
         if (!res.ok) {
@@ -52,26 +45,35 @@ export default function Home() {
         }
 
         const json: TemplateSummary[] = await res.json();
-        setTemplates(json);
-        setSelectedTemplateId((current) => current || json[0]?.id || "");
+        if (json.length > 0) {
+          setTemplate(json[0]);
+        }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load templates");
+        setError(e instanceof Error ? e.message : "Failed to load template");
       }
     };
 
-    void loadTemplates();
-  }, []);
-
-  const selectedTemplate = templates.find((template) => template.id === selectedTemplateId) ?? null;
-
-  useEffect(() => {
-    if (selectedTemplateId) {
-      localStorage.setItem("selectedTemplateId", selectedTemplateId);
+    void loadTemplate();
+    if (typeof window !== "undefined") {
+      localStorage.setItem("selectedTemplateId", "template-1");
+      const savedRoll = localStorage.getItem("roll_number");
+      const savedSem = localStorage.getItem("semester");
+      if (savedRoll || savedSem) {
+        setForm((prev) => ({
+          ...prev,
+          roll_number: savedRoll || prev.roll_number,
+          semester: savedSem || prev.semester,
+        }));
+      }
     }
-  }, [selectedTemplateId]);
+  }, []);
 
   const setField = (key: keyof TemplateForm, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+    if (typeof window !== "undefined") {
+      if (key === "roll_number") localStorage.setItem("roll_number", value);
+      if (key === "semester") localStorage.setItem("semester", value);
+    }
   };
 
   const resetMessages = () => {
@@ -80,11 +82,6 @@ export default function Home() {
   };
 
   const analyzeContents = async () => {
-    if (!selectedTemplate || selectedTemplate.source !== "builtin") {
-      setError("Select a built-in template before analyzing the table of contents.");
-      return;
-    }
-
     setAnalyzingContents(true);
     resetMessages();
 
@@ -94,7 +91,7 @@ export default function Home() {
       if (contentsFile) {
         const formData = new FormData();
         formData.append("file", contentsFile);
-        res = await fetch(`${API_BASE}/api/templates/${selectedTemplate.id}/analyze-contents-upload`, {
+        res = await fetch(`${API_BASE}/api/templates/template-1/analyze-contents-upload`, {
           method: "POST",
           body: formData,
         });
@@ -103,7 +100,7 @@ export default function Home() {
           throw new Error("Paste the table of contents text or upload a PDF before analyzing.");
         }
 
-        res = await fetch(`${API_BASE}/api/templates/${selectedTemplate.id}/analyze-contents-text`, {
+        res = await fetch(`${API_BASE}/api/templates/template-1/analyze-contents-text`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: contentsText.trim() }),
@@ -126,17 +123,12 @@ export default function Home() {
     }
   };
 
-  const downloadSelectedTemplate = async () => {
-    if (!selectedTemplate) {
-      setError("Select a template before downloading.");
-      return;
-    }
-
+  const downloadTemplate = async () => {
     setLoading(true);
     resetMessages();
 
     try {
-      const res = await fetch(`${API_BASE}/api/templates/${selectedTemplate.id}/download`, {
+      const res = await fetch(`${API_BASE}/api/templates/template-1/download`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -150,48 +142,16 @@ export default function Home() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = selectedTemplate.download_filename;
+      anchor.download = template?.download_filename ?? "Navaneeth-modern-record.zip";
+      document.body.appendChild(anchor);
       anchor.click();
+      document.body.removeChild(anchor);
       URL.revokeObjectURL(url);
-      setSuccess(`${selectedTemplate.name} is ready to download.`);
+      setSuccess("Lab Record ZIP package downloaded successfully.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to download selected template");
+      setError(e instanceof Error ? e.message : "Failed to download template");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const uploadTemplate = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
-    setUploading(true);
-    resetMessages();
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const res = await fetch(`${API_BASE}/api/templates/upload`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-
-      const created: TemplateSummary = await res.json();
-      setTemplates((prev) => [...prev, created]);
-      setSelectedTemplateId(created.id);
-      setSuccess(`${created.name} was added to the template shelf.`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Template upload failed");
-    } finally {
-      setUploading(false);
-      event.target.value = "";
     }
   };
 
@@ -199,64 +159,59 @@ export default function Home() {
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#eff6ff_0%,_#f8fafc_45%,_#e2e8f0_100%)] px-4 py-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <header className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white/90 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur">
-          <div className="grid gap-6 px-6 py-8 md:grid-cols-[1.4fr_0.8fr] md:px-8">
-            <div className="space-y-5">
-              <div className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">
-                Template-first workspace
-              </div>
-              <div className="space-y-3">
-                <h1 className="text-4xl font-bold tracking-tight text-slate-950 md:text-5xl">Lab Record Studio</h1>
-                <p className="max-w-2xl text-sm leading-7 text-slate-600 md:text-base">
-                  Pick a record template first, review its PDF preview, then download the ZIP package or move straight to the experiment LaTeX generator.
-                </p>
+          <div className="grid gap-6 px-6 py-6 lg:grid-cols-[1.1fr_1fr] md:px-8 items-center">
+            <div className="flex flex-col justify-between space-y-6">
+              <div className="space-y-5">
+                <div className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">
+                  Navaneeth Lab Record
+                </div>
+                <div className="space-y-3">
+                  <h1 className="text-4xl font-bold tracking-tight text-slate-950 md:text-5xl">Lab Record Studio</h1>
+                  <p className="max-w-xl text-sm leading-7 text-slate-600 md:text-base">
+                    Preview the record PDF, customize the lab cover and course information, analyze the table of contents, and download the full LaTeX ZIP bundle or generate experiment snippets.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={downloadTemplate}
+                    disabled={loading}
+                    className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {loading ? "Preparing ZIP..." : "Download Template ZIP"}
+                  </button>
+                  <Link
+                    href="/generate"
+                    className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white"
+                  >
+                    Generate Experiment LaTeX
+                  </Link>
+                </div>
               </div>
 
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={downloadSelectedTemplate}
-                  disabled={loading || !selectedTemplate}
-                  className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              <div className="flex items-center justify-between border-t border-slate-100 pt-4 text-xs text-slate-500">
+                <span className="font-medium text-slate-700">{template?.name ?? "Navaneeth - Lab Record"}</span>
+                <a
+                  href={`${API_BASE}/api/templates/template-1/preview`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-800 transition"
                 >
-                  {loading ? "Preparing ZIP..." : "Download Selected Template"}
-                </button>
-                <Link
-                  href="/generate"
-                  className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white"
-                >
-                  Generate Experiment LaTeX
-                </Link>
+                  <span>Open PDF in new tab</span>
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
               </div>
-
-             
             </div>
 
-            <div className="rounded-[1.75rem] bg-[linear-gradient(160deg,_#082f49_0%,_#0f766e_100%)] p-6 text-white shadow-inner">
-              <div className="flex h-full flex-col justify-between gap-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm uppercase tracking-[0.24em] text-cyan-100">Selected Template</p>
-                    <h2 className="mt-2 text-2xl font-semibold">{selectedTemplate?.name ?? "Loading..."}</h2>
-                    <p className="mt-3 max-w-sm text-sm leading-6 text-cyan-50/85">
-                      {selectedTemplate?.description ?? "Fetching available templates from the backend library."}
-                    </p>
-                  </div>
-                  <div className="flex h-28 w-28 items-center justify-center rounded-full border-4 border-white/35 bg-white/10 text-lg font-bold tracking-[0.28em] text-white shadow-[inset_0_0_40px_rgba(255,255,255,0.15)]">
-                    {selectedTemplate ? logoMarks[selectedTemplate.source] : "LOGO"}
-                  </div>
-                </div>
-
-                <div className="grid gap-3 rounded-[1.5rem] border border-white/15 bg-white/10 p-4 text-sm text-cyan-50/90 md:grid-cols-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.22em] text-cyan-100/80">Source</p>
-                    <p className="mt-2 font-medium capitalize">{selectedTemplate?.source ?? "..."}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.22em] text-cyan-100/80">Customization</p>
-                    <p className="mt-2 font-medium">{selectedTemplate?.is_customizable ? "Uses this template's built-in LaTeX files" : "Downloads as uploaded ZIP"}</p>
-                  </div>
-                </div>
-              </div>
+            <div className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-100 shadow-inner">
+              <iframe
+                title="Lab Record Preview"
+                src={`${API_BASE}/api/templates/template-1/preview`}
+                className="h-[460px] w-full border-0"
+              />
             </div>
           </div>
         </header>
@@ -264,78 +219,13 @@ export default function Home() {
         {success && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div>}
         {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-        <section className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-semibold text-slate-900">Choose a Template</h2>
-              <p className="mt-1 text-sm text-slate-600">The current backend template is the default card, and you can add more ZIP templates with the plus card.</p>
-            </div>
-
-            <label className="inline-flex cursor-pointer items-center gap-3 rounded-full border border-dashed border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400">
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-950 text-xl leading-none text-white">+</span>
-              {uploading ? "Uploading..." : "Add Template ZIP"}
-              <input type="file" accept=".zip" onChange={uploadTemplate} className="hidden" />
-            </label>
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            {templates.map((template) => {
-              const isSelected = template.id === selectedTemplateId;
-              return (
-                <button
-                  key={template.id}
-                  type="button"
-                  onClick={() => setSelectedTemplateId(template.id)}
-                  className={`overflow-hidden rounded-[1.75rem] border bg-white text-left shadow-sm transition ${
-                    isSelected ? "border-sky-400 shadow-[0_22px_60px_rgba(14,116,144,0.16)]" : "border-slate-200 hover:border-slate-300 hover:shadow-md"
-                  }`}
-                >
-                  <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <h3 className="text-lg font-semibold text-slate-900">{template.name}</h3>
-                        <p className="mt-1 text-sm text-slate-600">{template.description}</p>
-                      </div>
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
-                          isSelected ? "bg-sky-100 text-sky-700" : "bg-slate-200 text-slate-600"
-                        }`}
-                      >
-                        {isSelected ? "Selected" : template.source}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-100 p-4">
-                    {template.preview_url ? (
-                      <div className="overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white shadow-inner">
-                        <iframe
-                          title={`${template.name} preview`}
-                          src={`${API_BASE}${template.preview_url}`}
-                          className="h-[360px] w-full"
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex h-[360px] items-center justify-center rounded-[1.25rem] border border-dashed border-slate-300 bg-white px-8 text-center text-sm leading-7 text-slate-500">
-                        Manual upload templates do not have an automatic preview. Select the ZIP and download it directly when needed.
-                      </div>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
         <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
           <div className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-semibold text-slate-900">Template Details</h2>
                 <p className="mt-1 text-sm text-slate-600">
-                  {selectedTemplate?.is_customizable
-                    ? "These values are injected into the selected built-in template before download."
-                    : "Uploaded templates are downloaded exactly as they were added. The form is only used by the built-in templates."}
+                  These values are injected into the record template before download.
                 </p>
               </div>
               <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">
@@ -345,102 +235,90 @@ export default function Home() {
 
             <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2">
               <input value={form.name} onChange={(e) => setField("name", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" placeholder="Name" />
-              <input value={form.lab_name} onChange={(e) => setField("lab_name", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" placeholder="Lab Name" />
               <input value={form.course_code} onChange={(e) => setField("course_code", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" placeholder="Course Code" />
               <input value={form.course_name} onChange={(e) => setField("course_name", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" placeholder="Course Name" />
               <input value={form.department} onChange={(e) => setField("department", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" placeholder="Department" />
               <input value={form.institution} onChange={(e) => setField("institution", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" placeholder="Institution" />
-              <input value={form.semester} onChange={(e) => setField("semester", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" placeholder="Semester" />
+              <input value={form.semester} onChange={(e) => setField("semester", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" placeholder="Semester (e.g. S7)" />
               <input value={form.academic_year} onChange={(e) => setField("academic_year", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" placeholder="Academic Year" />
-              <input value={form.submitted_to} onChange={(e) => setField("submitted_to", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" placeholder="Submitted To" />
-              <input value={form.submitted_by} onChange={(e) => setField("submitted_by", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" placeholder="Submitted By" />
-              <input value={form.roll_number} onChange={(e) => setField("roll_number", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" placeholder="Roll Number" />
+              <input value={form.roll_number} onChange={(e) => setField("roll_number", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" placeholder="Lab Roll Number (e.g. s23a48)" />
               <input value={form.section} onChange={(e) => setField("section", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" placeholder="Section" />
-              <input
-                value={form.experiment_title}
-                onChange={(e) => setField("experiment_title", e.target.value)}
-                className="rounded-xl border border-slate-300 px-4 py-3 text-sm md:col-span-2"
-                placeholder="Experiment Title"
-              />
-              <input value={form.date} onChange={(e) => setField("date", e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 text-sm md:col-span-2" placeholder="Date" />
             </div>
 
-            {selectedTemplate?.source === "builtin" && (
-              <div className="mt-8 space-y-4 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5">
-                <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-900">Table of Contents Analyzer</h3>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Paste the contents table or upload a PDF. The app will generate the matching `contents.tex`, empty experiment files, and template-specific `main.tex` includes.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={analyzeContents}
-                    disabled={analyzingContents}
-                    className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-                  >
-                    {analyzingContents ? "Analyzing..." : "Analyze Contents"}
-                  </button>
+            <div className="mt-8 space-y-4 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5">
+              <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Table of Contents Analyzer</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Paste the contents table or upload a PDF. The app will generate the matching `contents.tex`, empty experiment files, and `main.tex` includes.
+                  </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={analyzeContents}
+                  disabled={analyzingContents}
+                  className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {analyzingContents ? "Analyzing..." : "Analyze Contents"}
+                </button>
+              </div>
 
-                <textarea
-                  value={contentsText}
-                  onChange={(e) => setContentsText(e.target.value)}
-                  className="min-h-[180px] w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"
-                  placeholder="Paste the table of contents here if you are not uploading a PDF."
-                />
+              <textarea
+                value={contentsText}
+                onChange={(e) => setContentsText(e.target.value)}
+                className="min-h-[180px] w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"
+                placeholder="Paste the table of contents here if you are not uploading a PDF."
+              />
 
-                <input
-                  type="file"
-                  accept=".pdf,.png,.jpg,.jpeg,.webp"
-                  onChange={(e) => setContentsFile(e.target.files?.[0] ?? null)}
-                  className="block w-full rounded-xl border border-slate-300 bg-white p-3 text-sm"
-                />
+              <input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.webp"
+                onChange={(e) => setContentsFile(e.target.files?.[0] ?? null)}
+                className="block w-full rounded-xl border border-slate-300 bg-white p-3 text-sm"
+              />
 
-                {form.contents_cycles.length > 0 && (
-                  <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-                    <div className="rounded-xl border border-slate-200 bg-white p-4">
-                      <p className="text-sm font-semibold text-slate-900">Detected Structure</p>
-                      <div className="mt-3 space-y-3 text-sm text-slate-700">
-                        {form.contents_cycles.map((cycle) => (
-                          <div key={cycle.cycle_number}>
-                            <p className="font-semibold">{`Cycle ${cycle.cycle_number}: ${cycle.title}`}</p>
-                            <p className="mt-1 text-slate-500">{`${cycle.entries.length} experiment(s)`}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-slate-200 bg-white p-4">
-                      <p className="text-sm font-semibold text-slate-900">Generated Files</p>
-                      <p className="mt-1 text-sm text-slate-500">{generatedFiles.join(", ")}</p>
-                      <textarea
-                        readOnly
-                        value={contentsPreview}
-                        className="mt-4 min-h-[220px] w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 font-mono text-xs text-slate-700"
-                      />
+              {form.contents_cycles.length > 0 && (
+                <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-sm font-semibold text-slate-900">Detected Structure</p>
+                    <div className="mt-3 space-y-3 text-sm text-slate-700">
+                      {form.contents_cycles.map((cycle) => (
+                        <div key={cycle.cycle_number}>
+                          <p className="font-semibold">{`Cycle ${cycle.cycle_number}: ${cycle.title}`}</p>
+                          <p className="mt-1 text-slate-500">{`${cycle.entries.length} experiment(s)`}</p>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                )}
-              </div>
-            )}
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-sm font-semibold text-slate-900">Generated Files</p>
+                    <p className="mt-1 text-sm text-slate-500">{generatedFiles.join(", ")}</p>
+                    <textarea
+                      readOnly
+                      value={contentsPreview}
+                      className="mt-4 min-h-[220px] w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 font-mono text-xs text-slate-700"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <aside className="rounded-[1.75rem] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff_0%,_#f8fafc_100%)] p-6 shadow-sm">
             <h2 className="text-2xl font-semibold text-slate-900">Next Actions</h2>
             <p className="mt-2 text-sm leading-7 text-slate-600">
-              Template selection happens here first. The experiment LaTeX snippet workflow remains the same and is still available on the generator page.
+              Download the complete ZIP project for Overleaf or your local TeX distribution, or use the experiment generator to convert program code into report snippets.
             </p>
 
             <div className="mt-6 space-y-3">
               <button
                 type="button"
-                onClick={downloadSelectedTemplate}
-                disabled={loading || !selectedTemplate}
+                onClick={downloadTemplate}
+                disabled={loading}
                 className="w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading ? "Preparing Download..." : "Download Selected ZIP"}
+                {loading ? "Preparing Download..." : "Download Template ZIP"}
               </button>
               <Link
                 href="/generate"
@@ -451,12 +329,10 @@ export default function Home() {
             </div>
 
             <div className="mt-6 rounded-[1.5rem] border border-slate-200 bg-white p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Selected package</p>
-              <p className="mt-3 text-lg font-semibold text-slate-900">{selectedTemplate?.download_filename ?? "Loading..."}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Package Details</p>
+              <p className="mt-3 text-lg font-semibold text-slate-900">{template?.download_filename ?? "record-template.zip"}</p>
               <p className="mt-2 text-sm text-slate-600">
-                {selectedTemplate?.is_customizable
-                  ? "The selected built-in template is rendered with the form details before the ZIP is generated."
-                  : "This template is downloaded exactly as uploaded, including its bundled files."}
+                Bundled with `main.tex`, `cover_page.tex`, `follow_page.tex`, `contents.tex`, and college insignia logo.
               </p>
             </div>
           </aside>

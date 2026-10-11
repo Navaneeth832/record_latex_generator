@@ -1,4 +1,4 @@
-﻿# =========================================================
+# =========================================================
 # ENV LOAD
 # =========================================================
 import os
@@ -24,6 +24,11 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+from dotenv import load_dotenv
+
+# This will look for the .env file in the root directory
+load_dotenv() 
 
 
 # =========================================================
@@ -53,6 +58,7 @@ class ProgramData(BaseModel):
     title: str = ""
     code: str
     output: str = ""
+    commands: str = ""
 
 
 class AlgorithmData(BaseModel):
@@ -69,6 +75,8 @@ class ExperimentData(BaseModel):
     programs: List[ProgramData]
     result: str
     template_id: str = "template-1"
+    roll_number: str = "s23a48"
+    semester: str = "S7"
 
 
 class TextProcessRequest(BaseModel):
@@ -86,7 +94,7 @@ class TemplateRequest(BaseModel):
     course_name: str = "COMPUTER NETWORKS LAB"
     department: str = "COMPUTER SCIENCE AND ENGINEERING"
     institution: str = "COLLEGE OF ENGINEERING TRIVANDRUM"
-    semester: str = "S6"
+    semester: str = "S7"
     academic_year: str = "2025-2026"
     submitted_to: str = "FACULTY IN CHARGE"
     submitted_by: str = "YOUR NAME"
@@ -188,52 +196,6 @@ __OUTPUTS__
 __RESULT__
 """
 
-# =========================================================
-# LATEX TEMPLATE 2 (FOR LABEXPERIMENT ENVIRONMENT)
-# =========================================================
-LATEX_TEMPLATE_2 = r"""
-\pagestyle{fancy}
-\fancyhf{}
-\fancyhead[L]{Experiment __NO__}
-\fancyhead[R]{Page \thepage}
-
-\lstset{
-language=C,
-basicstyle=\ttfamily\footnotesize,
-frame=single,
-numbers=left,
-numberstyle=\tiny,
-breaklines=true,
-style=cstyle
-}
-
-\tcbset{
-myoutputbox/.style={
-colback=black,
-colframe=gray!75!black,
-coltext=white,
-fontupper=\ttfamily\small
-}
-}
-
-\begin{labexperiment}%
-    {__HEADING__}%
-    {__DATE__}%
-    {__AIM__}
-    \label{exp:__NO__}
-
-    \subsubsection*{\textbf{Algorithm}}
-__ALGORITHMS__
-
-__PROGRAMS__
-
-__OUTPUTS__
-
-    \subsubsection*{\textbf{Result}}
-    __RESULT__
-
-\end{labexperiment}
-"""
 
 # =========================================================
 # LLM ABSTRACTION
@@ -380,7 +342,7 @@ def parse_programs_from_text(raw: str):
 def generate_academic(program):
 
     prompt = f"""
-        Act as a precise code-to-JSON parser. Analyze the C code provided and return ONLY a raw JSON object. The algorithm should be detailed and perfect.
+        Act as a precise code-to-JSON parser. Analyze the source code provided and return ONLY a raw JSON object. The algorithm should be detailed and perfect.
         DO NOT include markdown formatting, DO NOT include ```json tags, and DO NOT include any introductory or concluding text.
 
         ### SCHEMA:
@@ -392,6 +354,20 @@ def generate_academic(program):
             "steps": ["Step 1", "Step 2"]
             }}
         ],
+        "commands": "Compile and run commands appropriate for this type of program (e.g. gcc program.c\\n./a.out or python3 script.py)
+        if the type of program is found in the below instruction strictly follow the compilation method.
+        1. Pure C Programs
+        gcc filename.c (Note: You should name the program file)
+        ./a.out
+        2. LEX Programs
+        lex filename.l (Note: You should name the program file)
+        gcc lex.yy.c
+        ./a.out
+        3. LEX & YACC Programs
+        yacc -d filename.y (Note: You should name the program file)
+        lex filename.l (Note: You should name the program file)
+        gcc y.tab.c lex.yy.c
+        ./a.out",
         "output": "Simulated terminal output including mock inputs"
         }}
 
@@ -403,14 +379,18 @@ def generate_academic(program):
 
     algos = [
         AlgorithmData(**a)
-        for a in data["algorithms"]
+        for a in data.get("algorithms", [])
     ]
 
-    return data["aim"], algos, data["output"]
+    cmds = data.get("commands", "")
+    if isinstance(cmds, list):
+        cmds = "\n".join(cmds)
+
+    return data.get("aim", ""), algos, data.get("output", ""), str(cmds)
 
 
 def generate_metadata(aim):
-    prompt="generate a concise experiment heading based on this AIM:\n\n" + aim
+    prompt="generate a concise experiment heading based on this AIM only include text dont include other symbols like * or something else:\n\n" + aim
     res = llm_generate(prompt)
     heading = res.strip().splitlines()[0] if res else ""
     if not heading:
@@ -535,8 +515,6 @@ def render_zip_template(template: str, values: dict):
 
 BASE_DIR = Path(__file__).resolve().parent
 BUILTIN_TEMPLATE_DIR = BASE_DIR / "builtin_templates"
-TEMPLATE_LIBRARY_DIR = BASE_DIR / "template_library"
-UPLOADED_TEMPLATE_DIR = TEMPLATE_LIBRARY_DIR / "uploads"
 
 
 def read_template_file(*parts: str):
@@ -553,10 +531,6 @@ def format_cycle_heading(cycle: TemplateCycle):
 
 def build_template1_file_name(cycle_number: int, entry_index: int):
     return f"Expt{cycle_number}_{entry_index}_1.tex"
-
-
-def build_template2_file_name(cycle_number: int):
-    return f"CYCLE{cycle_number}.tex"
 
 
 def build_template1_contents_tex(cycles: List[TemplateCycle]):
@@ -595,48 +569,6 @@ def build_template1_contents_tex(cycles: List[TemplateCycle]):
     return "\n".join(lines)
 
 
-def build_template2_label(cycle_number: int, serial_number: int):
-    return f"exp:c{cycle_number}-e{serial_number}"
-
-
-def build_template2_contents_tex(cycles: List[TemplateCycle]):
-    lines = [
-        r"\newpage",
-        r"\thispagestyle{empty}",
-        r"\renewcommand{\arraystretch}{1.6}",
-        r"\setlength{\tabcolsep}{6pt}",
-        r"\begin{center}",
-        r"{\Large\bfseries LIST OF EXPERIMENTS}",
-        r"\end{center}",
-        r"\vspace{0.5cm}",
-        r"\begin{center}",
-        r"\begin{longtable}{|>{\centering\arraybackslash}p{1.2cm}|p{8.2cm}|>{\centering\arraybackslash}p{1.5cm}|>{\centering\arraybackslash}p{2.5cm}|>{\centering\arraybackslash}p{1.5cm}|}",
-        r"\hline",
-        r"\textbf{SL NO.} & \textbf{EXPERIMENT NAME} & \textbf{PAGE NO.} & \textbf{DATE} & \textbf{SIGN.} \\",
-        r"\hline",
-        r"\endfirsthead",
-        r"\hline",
-        r"\textbf{SL NO.} & \textbf{EXPERIMENT NAME} & \textbf{PAGE NO.} & \textbf{DATE} & \textbf{SIGN.} \\",
-        r"\hline",
-        r"\endhead",
-        "",
-    ]
-
-    for cycle in cycles:
-        lines.append(rf"\multicolumn{{5}}{{|p{{14.5cm}}|}}{{\textbf{{{latex_escape(format_cycle_heading(cycle))}}}}} \\")
-        lines.append(r"\hline")
-        for entry in cycle.entries:
-            label = build_template2_label(cycle.cycle_number, entry.serial_number)
-            lines.append(
-                rf"{entry.serial_number} & {latex_escape(entry.title.upper())} & \pageref{{{label}}} &  & \\"
-            )
-            lines.append(r"\hline")
-        lines.append("")
-
-    lines.extend([r"\end{longtable}", r"\end{center}", r"\renewcommand{\arraystretch}{1.0}", r"\newpage"])
-    return "\n".join(lines)
-
-
 def build_template1_experiment_files(cycles: List[TemplateCycle]):
     files = {}
     include_lines = []
@@ -663,66 +595,6 @@ def inject_template1_main(main_template: str, include_lines: List[str]):
     return cleaned.replace(marker, marker + "\n" + "\n".join(include_lines), 1)
 
 
-def build_template2_cycle_files(cycles: List[TemplateCycle]):
-    files = {}
-    cycle_inputs = []
-
-    for cycle in cycles:
-        filename = build_template2_file_name(cycle.cycle_number)
-        cycle_inputs.append(rf"\input{{{Path(filename).stem}}}")
-        blocks = []
-        for entry in cycle.entries:
-            label = build_template2_label(cycle.cycle_number, entry.serial_number)
-            blocks.append(
-                "\n".join(
-                    [
-                        rf"\begin{{labexperiment}}{{{latex_escape(entry.title.upper())}}}{{}}{{}}",
-                        rf"\label{{{label}}}",
-                        "% Add experiment content here.",
-                        r"\end{labexperiment}",
-                        r"\newpage",
-                    ]
-                )
-            )
-        files[filename] = "\n\n".join(blocks).strip() + "\n"
-
-    return files, cycle_inputs
-
-
-def inject_template2_main(main_template: str, cycles: List[TemplateCycle], cycle_inputs: List[str]):
-    prefix, separator, suffix = main_template.partition(r"\input{contents}")
-    if not separator:
-        raise HTTPException(500, "Template 2 main.tex is missing the contents input marker.")
-
-    _, end_marker, trailer = suffix.rpartition(r"\end{document}")
-    if not end_marker:
-        raise HTTPException(500, "Template 2 main.tex is missing \\end{document}.")
-
-    generated_blocks = []
-    for cycle, cycle_input in zip(cycles, cycle_inputs):
-        generated_blocks.append(
-            "\n".join(
-                [
-                    r"\newpage",
-                    rf"\CenteredChapter{{{latex_escape(format_cycle_heading(cycle))}}}",
-                    r"\newpage",
-                    cycle_input,
-                    r"\newpage",
-                ]
-            )
-        )
-
-    return (
-        prefix
-        + separator
-        + "\n"
-        + "\n".join(generated_blocks)
-        + "\n"
-        + end_marker
-        + trailer
-    )
-
-
 def build_template_assets(template_id: str, cycles: List[TemplateCycle], base_files: dict):
     files = dict(base_files)
 
@@ -732,12 +604,6 @@ def build_template_assets(template_id: str, cycles: List[TemplateCycle], base_fi
         files["main.tex"] = inject_template1_main(files["main.tex"], include_lines)
         files.update(experiment_files)
         generated_files = ["contents.tex", "main.tex", *experiment_files.keys()]
-    elif template_id == "template-2":
-        cycle_files, cycle_inputs = build_template2_cycle_files(cycles)
-        files["contents.tex"] = build_template2_contents_tex(cycles)
-        files["main.tex"] = inject_template2_main(files["main.tex"], cycles, cycle_inputs)
-        files.update(cycle_files)
-        generated_files = ["contents.tex", "main.tex", *cycle_files.keys()]
     else:
         raise HTTPException(404, "Built-in template not found")
 
@@ -745,9 +611,9 @@ def build_template_assets(template_id: str, cycles: List[TemplateCycle], base_fi
 
 BUILTIN_TEMPLATES = {
     "template-1": {
-        "name": "Navaneeth - Lab Record",
+        "name": "Lab Record",
         "description": "Well-designed lab record with output boxes.",
-        "download_filename": "Navaneeth-modern-record.zip",
+        "download_filename": "record-template.zip",
         "files": {
             "main.tex": read_template_file("template-1", "main.tex"),
             "cover_page.tex": read_template_file("template-1", "cover_page.tex"),
@@ -755,27 +621,7 @@ BUILTIN_TEMPLATES = {
             "contents.tex": read_template_file("template-1", "contents.tex"),
         },
     },
-    "template-2": {
-        "name": "Harikrishnan - Lab Record",
-        "description": "Cleaner lab record template with organised Contents and experiments.",
-        "download_filename": "Harikrishnan-classic-record.zip",
-        "files": {
-            "main.tex": read_template_file("template-2", "main.tex"),
-            "cover_page.tex": read_template_file("template-2", "cover_page.tex"),
-            "follow_page.tex": read_template_file("template-2", "follow_page.tex"),
-            "contents.tex": read_template_file("template-2", "contents.tex"),
-        },
-    },
 }
-
-
-def slugify(value: str):
-    normalized = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
-    return normalized or "template"
-
-
-def ensure_template_dirs():
-    UPLOADED_TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def build_builtin_template_summary(template_id: str):
@@ -791,99 +637,13 @@ def build_builtin_template_summary(template_id: str):
     )
 
 
-def build_uploaded_template_summary(path: Path):
-    label = path.stem.replace("_", " ").replace("-", " ").strip() or "Custom Template"
-    return TemplateSummary(
-        id=path.stem,
-        name=label.title(),
-        description="Uploaded ZIP template available for direct download.",
-        source="uploaded",
-        is_customizable=False,
-        preview_url=None,
-        download_filename=path.name,
-    )
-
-
 def list_template_summaries():
-    ensure_template_dirs()
-    templates = [build_builtin_template_summary(template_id) for template_id in BUILTIN_TEMPLATES]
-    for path in sorted(UPLOADED_TEMPLATE_DIR.glob("*.zip")):
-        templates.append(build_uploaded_template_summary(path))
-    return templates
-
-
-def get_uploaded_template_path(template_id: str):
-    candidate = UPLOADED_TEMPLATE_DIR / f"{template_id}.zip"
-    if candidate.exists():
-        return candidate
-    raise HTTPException(404, "Template not found")
-
-
-def resolve_template_summary(template_id: str):
-    if template_id in BUILTIN_TEMPLATES:
-        return build_builtin_template_summary(template_id)
-    return build_uploaded_template_summary(get_uploaded_template_path(template_id))
-
-
-def render_preview_pdf(title: str, subtitle: str, accent: Tuple[float, float, float], details: List[str], logo_stream: Optional[bytes] = None):
-    doc = fitz.open()
-    page = doc.new_page(width=595, height=842)
-
-    page.draw_rect(fitz.Rect(0, 0, 595, 842), fill=(0.97, 0.98, 1.0), color=(0.97, 0.98, 1.0))
-    page.draw_rect(fitz.Rect(36, 36, 559, 806), color=(0.55, 0.62, 0.78), width=1.5, fill=(1, 1, 1))
-    page.draw_rect(fitz.Rect(36, 36, 559, 166), fill=accent, color=accent)
-    page.draw_rect(fitz.Rect(64, 360, 531, 724), color=(0.88, 0.9, 0.96), fill=(0.98, 0.985, 1), width=1.2)
-
-    page.insert_text((64, 84), "Lab Record Studio", fontsize=18, fontname="helv", color=(1, 1, 1))
-    page.insert_text((64, 118), title, fontsize=28, fontname="helv", color=(1, 1, 1))
-    page.insert_text((64, 146), subtitle, fontsize=12, fontname="helv", color=(0.93, 0.95, 1))
-
-    circle_center = fitz.Point(458, 248)
-    circle_radius = 68
-    page.draw_circle(circle_center, circle_radius, color=accent, fill=(0.96, 0.98, 1), width=2.5)
-    if logo_stream:
-        image_rect = fitz.Rect(circle_center.x - 44, circle_center.y - 44, circle_center.x + 44, circle_center.y + 44)
-        try:
-            page.insert_image(image_rect, stream=logo_stream, keep_proportion=True)
-        except RuntimeError:
-            pass
-    else:
-        page.insert_text((circle_center.x - 22, circle_center.y + 6), "LOGO", fontsize=16, fontname="helv", color=accent)
-
-    page.insert_text((64, 226), "Preview", fontsize=13, fontname="helv", color=accent)
-    page.insert_textbox(
-        fitz.Rect(64, 246, 360, 332),
-        "Select this template first, then download the ZIP package or continue to experiment generation. The LaTeX snippet generator stays unchanged.",
-        fontsize=14,
-        fontname="helv",
-        color=(0.2, 0.25, 0.35),
-        lineheight=1.35,
-    )
-
-    page.insert_text((88, 396), "Template Contents", fontsize=18, fontname="helv", color=(0.16, 0.21, 0.3))
-
-    y = 430
-    for detail in details[:12]:
-        page.draw_circle(fitz.Point(98, y - 4), 3.2, color=accent, fill=accent)
-        page.insert_textbox(
-            fitz.Rect(112, y - 14, 500, y + 12),
-            detail,
-            fontsize=12.5,
-            fontname="helv",
-            color=(0.22, 0.26, 0.35),
-        )
-        y += 30
-
-    out = doc.tobytes()
-    doc.close()
-    return out
+    return [build_builtin_template_summary("template-1")]
 
 
 def build_builtin_preview_pdf(template_id: str):
     if template_id == "template-1":
         preview_path = BASE_DIR / "builtin_templates" / "Navaneeth_modern_record.pdf"
-    elif template_id == "template-2":
-        preview_path = BASE_DIR / "builtin_templates" / "Harikrishnan_classic_record.pdf"
     else:
         raise HTTPException(404, "Template not found")
     
@@ -977,17 +737,49 @@ f"""\\subsection*{{Listing {i}: {p.title}}}
     return "\n".join(out)
 
 
-def build_outputs(programs,s):
+def format_roll_no(roll_str: Optional[str]) -> str:
+    if not roll_str or not str(roll_str).strip():
+        return "s23a48"
+    s = str(roll_str).strip().lower().split('@')[0]
+    return s if s else "s23a48"
+
+
+def format_sem_dir(sem_str: Optional[str]) -> str:
+    if not sem_str or not str(sem_str).strip():
+        return "s7"
+    s = str(sem_str).strip().lower()
+    match = re.search(r'\d+', s)
+    if match:
+        return f"s{match.group(0)}"
+    return s if s else "s7"
+
+
+def build_outputs(programs, exp_number, roll_number="s23a48", semester="s7"):
+    user_str = format_roll_no(roll_number)
+    sem_str = format_sem_dir(semester)
+    prompt_prefix = f"{user_str}@Server-2:~/{sem_str}$"
 
     out = []
 
-    for p in programs:
+    for i, p in enumerate(programs, 1):
+        raw_cmds = (p.commands or "").strip()
+        if not raw_cmds:
+            exp_num = exp_number or "1"
+            raw_cmds = f"gcc {exp_num}.c\n./a.out"
+
+        cmd_lines = [c.strip() for c in raw_cmds.splitlines() if c.strip()]
+        terminal_lines = [f"{prompt_prefix} {cmd}" for cmd in cmd_lines]
+
+        output_content = (p.output or "").strip()
+        if output_content:
+            terminal_lines.append(output_content)
+
+        full_terminal = "\n".join(terminal_lines)
+
         out.append(
 f"""\\begin{{tcolorbox}}[myoutputbox,title=Terminal Output]
 \\begin{{verbatim}}
-s23a48@administrator-rusa:Ëœ/s6$ gcc {s}.c
-s23a48@administrator-rusa:Ëœ/s6$ ./a.out
-{p.output}
+{full_terminal}
 \\end{{verbatim}}
 \\end{{tcolorbox}}"""
         )
@@ -995,96 +787,10 @@ s23a48@administrator-rusa:Ëœ/s6$ ./a.out
     return "\n".join(out)
 
 
-def build_programs_template2(programs):
-    """Build programs with inline code for template-2."""
-    blocks = []
-    
-    for i, p in enumerate(programs, 1):
-        title_escaped = latex_escape(p.title)
-        code_escaped = p.code
-        
-        blocks.append(
-            f"      % -------- Program {i} --------\n"
-            f"      \\subsection{{{title_escaped}}}\n\n"
-            f"      \\subsubsection*{{\\textbf{{Program}}}}\n"
-            f"      \\begin{{lstlisting}}[style=cstyle]\n"
-            f"{code_escaped}\n"
-            f"      \\end{{lstlisting}}\n"
-        )
-    
-    return "\n".join(blocks)
-
-
-def build_algorithms_template2(algorithms):
-    """Build algorithms for template-2."""
-    blocks = []
-    
-    for algo in algorithms:
-        steps = "\n".join(
-            f"        \\item {latex_escape(clean_step(s))}"
-            for s in algo.steps
-        )
-        
-        blocks.append(
-            f"    \\textbf{{{latex_escape(algo.name)}}}:\n"
-            f"    \\begin{{enumerate}}\n"
-            f"{steps}\n"
-            f"    \\end{{enumerate}}\n"
-        )
-    
-    return "\n".join(blocks)
-
-
-def build_outputs_template2(programs):
-    """Build outputs for template-2 using termout environment."""
-    blocks = []
-    
-    for i, p in enumerate(programs, 1):
-        output_escaped = p.output
-        title_escaped = latex_escape(p.title) if p.title else f"Program {i}"
-        
-        blocks.append(
-            f"      \\vspace{{1cm}} \\subsubsection*{{\\textbf{{Output -- {title_escaped}}}}}\n"
-            f"      \\begin{{termout}}\n"
-            f"          \\begin{{lstlisting}}[style=plaintext]\n"
-            f"{output_escaped}\n"
-            f"          \\end{{lstlisting}}\n"
-            f"      \\end{{termout}}\n"
-        )
-    
-    return "\n".join(blocks)
-
-
 def build_latex(exp: ExperimentData):
-
-    if exp.template_id == "template-2":
-        latex = LATEX_TEMPLATE_2
-        latex = latex.replace("__NO__", exp.experiment_number)
-        latex = latex.replace("__HEADING__", latex_escape(exp.experiment_heading))
-        latex = latex.replace("__DATE__", latex_escape(exp.date))
-        latex = latex.replace("__AIM__", latex_escape(exp.aim))
-        latex = latex.replace("__RESULT__", latex_escape(exp.result))
-        
-        latex = latex.replace(
-            "__ALGORITHMS__",
-            build_algorithms_template2(exp.algorithms)
-        )
-        
-        latex = latex.replace(
-            "__PROGRAMS__",
-            build_programs_template2(exp.programs)
-        )
-        
-        latex = latex.replace(
-            "__OUTPUTS__",
-            build_outputs_template2(exp.programs)
-        )
-        
-        return latex
-    
-    # Template 1 (default)
+    # Template 1 (Navaneeth record)
     latex = LATEX_TEMPLATE
-    latex=latex.replace("<nombor>", exp.experiment_number[0])
+    latex = latex.replace("<nombor>", exp.experiment_number[0] if exp.experiment_number else "1")
     latex = latex.replace("__NO__", exp.experiment_number)
     latex = latex.replace("__HEADING__", exp.experiment_heading)
     latex = latex.replace("__DATE__", exp.date)
@@ -1103,7 +809,7 @@ def build_latex(exp: ExperimentData):
 
     latex = latex.replace(
         "__OUTPUTS__",
-        build_outputs(exp.programs,str(exp.experiment_number))
+        build_outputs(exp.programs, str(exp.experiment_number), exp.roll_number, exp.semester)
     )
 
     return latex
@@ -1119,9 +825,10 @@ def process_programs(programs):
 
     for p in programs:
 
-        prog_aim, algos, output = generate_academic(p)
+        prog_aim, algos, output, commands = generate_academic(p)
 
         p.output = output
+        p.commands = commands
 
         if not aim:
             aim = prog_aim
@@ -1187,24 +894,6 @@ async def get_templates():
     return list_template_summaries()
 
 
-@app.post("/api/templates/upload", response_model=TemplateSummary)
-async def upload_template(file: UploadFile = File(...)):
-    ensure_template_dirs()
-
-    if not file.filename or not file.filename.lower().endswith(".zip"):
-        raise HTTPException(400, "Please upload a ZIP template file.")
-
-    template_name = slugify(Path(file.filename).stem)
-    target = UPLOADED_TEMPLATE_DIR / f"{template_name}.zip"
-    suffix = 1
-    while target.exists():
-        target = UPLOADED_TEMPLATE_DIR / f"{template_name}-{suffix}.zip"
-        suffix += 1
-
-    target.write_bytes(await file.read())
-    return build_uploaded_template_summary(target)
-
-
 @app.post("/api/templates/{template_id}/analyze-contents-text", response_model=ContentsAnalysisResponse)
 async def analyze_template_contents_text(template_id: str, payload: ContentsTextRequest):
     if template_id not in BUILTIN_TEMPLATES:
@@ -1244,13 +933,11 @@ async def get_template_preview(template_id: str):
 
 @app.post("/api/templates/{template_id}/download")
 async def download_selected_template(template_id: str, payload: TemplateRequest):
-    if template_id in BUILTIN_TEMPLATES:
-        zip_buffer = build_template_zip(payload, template_id, get_builtin_template_files(template_id))
-        filename = build_builtin_template_summary(template_id).download_filename
-    else:
-        template_path = get_uploaded_template_path(template_id)
-        zip_buffer = io.BytesIO(template_path.read_bytes())
-        filename = template_path.name
+    if template_id not in BUILTIN_TEMPLATES:
+        raise HTTPException(404, "Template not found")
+
+    zip_buffer = build_template_zip(payload, template_id, get_builtin_template_files(template_id))
+    filename = build_builtin_template_summary(template_id).download_filename
 
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(zip_buffer, media_type="application/zip", headers=headers)
